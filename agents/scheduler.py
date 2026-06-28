@@ -21,6 +21,7 @@ from schemas import (
     SmartFollowUpSchema,
     UserProfileSchema,
     MCPToolResponseSchema,
+    PlanAdjustmentSchema,
     SleepQuality,
     MoodOnWake
 )
@@ -55,6 +56,51 @@ class SchedulerAgent:
         except Exception as e:
             logger.error("[SCHEDULER] Error during circadian calculation: %s", str(e), exc_info=True)
             raise ValueError(f"Circadian calculation failed: {e}") from e
+
+    def evaluate_and_adjust_plan(self, user_id: str, commit_weekly_adjustment: bool = False) -> PlanAdjustmentSchema:
+        """
+        Evaluates the user's adaptive sleep plan via the evaluate_plan MCP tool
+        and returns the resulting decision (whether the plan changed, why, and
+        the new target bedtime if applicable).
+
+        commit_weekly_adjustment=False (default): used on the daily check-in
+        path. The rolling trend is still computed and returned for status
+        purposes, but only a streak override can actually commit a change —
+        this avoids nudging the user's plan every single day.
+
+        commit_weekly_adjustment=True: used on the weekly report path. A
+        confirmed IMPROVING/DECLINING trend is allowed to commit a target
+        bedtime shift.
+        """
+        logger.info(
+            "[SCHEDULER] Evaluating adaptive plan for user_id '%s' (commit_weekly_adjustment=%s)",
+            user_id, commit_weekly_adjustment
+        )
+        try:
+            response_dict = get("evaluate_plan", {
+                "user_id": user_id,
+                "commit_weekly_adjustment": commit_weekly_adjustment
+            })
+            tool_response = MCPToolResponseSchema(**response_dict)
+
+            if tool_response.success:
+                if tool_response.data:
+                    adjustment = PlanAdjustmentSchema(**tool_response.data)
+                    logger.info(
+                        "[SCHEDULER] Plan evaluation complete. Status: %s, adjusted: %s",
+                        adjustment.status.value, adjustment.adjusted
+                    )
+                    return adjustment
+                else:
+                    raise ValueError("MCP tool returned success but empty data payload.")
+            else:
+                error_msg = tool_response.error or "Unknown error"
+                logger.error("[SCHEDULER] MCP tool failed to evaluate plan: %s", error_msg)
+                raise ValueError(error_msg)
+
+        except Exception as e:
+            logger.error("[SCHEDULER] Error during plan evaluation: %s", str(e), exc_info=True)
+            raise ValueError(f"Plan evaluation failed: {e}") from e
 
     def get_smart_followup(self, user_id: str, latest_entry: SleepEntrySchema) -> SmartFollowUpSchema:
         """
@@ -146,6 +192,14 @@ def run_smart_followup(user_id: str, latest_entry: SleepEntrySchema) -> SmartFol
     return agent.get_smart_followup(user_id, latest_entry)
 
 
+def run_evaluate_plan(user_id: str, commit_weekly_adjustment: bool = False) -> PlanAdjustmentSchema:
+    """
+    Convenience function to evaluate and (conditionally) adjust the user's plan.
+    """
+    agent = SchedulerAgent()
+    return agent.evaluate_and_adjust_plan(user_id, commit_weekly_adjustment)
+
+
 if __name__ == "__main__":
     agent = SchedulerAgent()
     
@@ -176,6 +230,8 @@ if __name__ == "__main__":
         caffeine_after_2pm=True,
         exercise_today=False,
         screen_time_before_bed=True,
+        focus_level=2,
+        energy_level=2,
         notes="Mock note.",
         score=45
     )
@@ -189,3 +245,14 @@ if __name__ == "__main__":
         print(msg_preview)
     except Exception as err:
         print(f"Test 2 failed with error: {err}")
+
+    # Test 3: evaluate_and_adjust_plan (daily, non-committing path)
+    print("\n[Test 3] Evaluating adaptive plan (daily path, no commit)...")
+    try:
+        plan_res = agent.evaluate_and_adjust_plan(user_id="test_user_123", commit_weekly_adjustment=False)
+        print("Status:", plan_res.status.value)
+        print("Triggered By:", plan_res.triggered_by.value)
+        print("Adjusted:", plan_res.adjusted)
+        print("Reason:", plan_res.reason)
+    except Exception as err:
+        print(f"Test 3 failed with error: {err}")

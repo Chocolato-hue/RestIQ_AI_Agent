@@ -13,9 +13,11 @@ load_dotenv()
 from logger_config import get_pipeline_logger
 logger = get_pipeline_logger()
 
+from sleep_coach import generate_coaching, format_coaching_message
+from agents.tracker import run_get_history
 # Import agent convenience functions
 from agents.intake import run_intake
-from agents.scheduler import run_circadian, run_smart_followup, SchedulerAgent
+from agents.scheduler import run_circadian, run_smart_followup, run_evaluate_plan, SchedulerAgent
 from agents.tracker import run_store, run_get_latest, run_get_history
 from agents.analyzer import run_analyze
 from agents.reporter import run_generate, ReporterAgent
@@ -29,6 +31,7 @@ from schemas import (
     SleepAnalysisSchema,
     WeeklyReportSchema,
     MCPToolResponseSchema,
+    PlanAdjustmentSchema,
     SleepQuality,
     MoodOnWake,
     VerdictLabel,
@@ -68,24 +71,47 @@ class RestIQPipeline:
         wake_time = entry.wake_time if entry.wake_time else "07:00"
         circadian: CircadianSchema = run_circadian(wake_time=wake_time, sleep_duration=8.0)
         
-        # 4. Run analyzer for the last 7 days of sleep metrics
+        # 4. Evaluate the adaptive plan (daily path: reports trend, only a
+        # streak override can commit a change — the weekly trend itself does
+        # not move the target on a daily check-in).
+        plan_adjustment: PlanAdjustmentSchema = run_evaluate_plan(user_id, commit_weekly_adjustment=False)
+        
+        # 5. Run analyzer for the last 7 days of sleep metrics
         analysis: SleepAnalysisSchema = run_analyze(user_id, days=7)
         
-        # 5. Format check-in reply message
-        top_rec = analysis.recommendations[0] if analysis.recommendations else "Maintain a consistent sleep window."
-        reply_message = (
-            "✅ Logged! Here's your quick summary:\n"
-            f"Sleep score: {score_val}/100\n"
-            f"Duration: {entry.sleep_duration}h\n"
-            f"Recommended bedtime tonight: {circadian.recommended_bedtime}\n"
-            f"Tip: {top_rec}"
+        # 6. Get history for sleep debt calculation
+        history = run_get_history(user_id, days=7)
+        
+        # 7. Generate science-based coaching
+        from sleep_coach import generate_coaching, format_coaching_message
+        coaching = generate_coaching(
+            entry=entry,
+            history=history,
+            analysis=analysis,
+            target_wake_time=entry.wake_time or "07:00",
         )
+        
+        # 8. Format the reply
+        coaching_text = format_coaching_message(coaching)
+        
+        reply_message = (
+            f"✅ *Sleep logged!*\n"
+            f"Score: {score_val}/100 · Duration: {entry.sleep_duration}h\n\n"
+            f"{coaching_text}"
+        )
+        
+        # If the plan was adjusted (only possible here via a streak override),
+        # surface that to the user immediately rather than waiting for the
+        # weekly report.
+        if plan_adjustment.adjusted:
+            reply_message += f"\n\n📋 *Plan update:* {plan_adjustment.reason}"
         
         logger.info("[PIPELINE] Check-in complete, score: %d", score_val)
         
         return {
             "entry": entry,
             "circadian": circadian,
+            "plan_adjustment": plan_adjustment,
             "analysis": analysis,
             "reply_message": reply_message
         }
@@ -94,6 +120,9 @@ class RestIQPipeline:
         """
         Generates a comprehensive weekly report containing scores analysis,
         milestone evaluations, coaching recommendations, and Plotly visualization.
+        Also evaluates the adaptive plan with commit_weekly_adjustment=True,
+        so a confirmed weekly trend (improving or declining) is allowed to
+        shift the user's target bedtime going into the next week.
         """
         logger.info("[PIPELINE] Generating weekly report for user_id '%s'", user_id)
         
@@ -103,14 +132,20 @@ class RestIQPipeline:
         # 2. Run analyzer agent to get sleep analysis
         analysis: SleepAnalysisSchema = run_analyze(user_id, days=7)
         
-        # 3. Format Telegram message
+        # 3. Evaluate the adaptive plan, committing any trend-based adjustment
+        plan_adjustment: PlanAdjustmentSchema = run_evaluate_plan(user_id, commit_weekly_adjustment=True)
+        
+        # 4. Format Telegram message, appending the plan update if relevant
         telegram_message = ReporterAgent().format_telegram_message(report)
+        if plan_adjustment.triggered_by.value != "NONE":
+            telegram_message += f"\n\n📋 Plan update: {plan_adjustment.reason}"
         
         logger.info("[PIPELINE] Weekly report complete for user_id '%s'", user_id)
         
         return {
             "report": report,
             "analysis": analysis,
+            "plan_adjustment": plan_adjustment,
             "telegram_message": telegram_message,
             "chart_path": report.plotly_chart_path
         }

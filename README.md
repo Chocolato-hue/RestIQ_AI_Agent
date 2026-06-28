@@ -1,0 +1,376 @@
+# 💤 RestIQ
+
+<div align="center">
+
+### Your Personal AI Sleep Concierge
+
+*Track your sleep. Understand your habits. Build healthier routines with a team of AI agents.*
+
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![Google ADK](https://img.shields.io/badge/Google-ADK-green)
+![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-orange)
+![SQLite](https://img.shields.io/badge/SQLite-Database-lightgrey)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
+</div>
+
+---
+
+## 🌙 Why RestIQ?
+
+Many people know they should sleep better—but struggle to consistently build healthy habits.
+
+Most sleep trackers simply collect data. RestIQ goes one step further by acting as an **AI sleep concierge** that understands your daily check-ins, identifies patterns, adapts recommendations over time, and provides personalized coaching.
+
+Instead of overwhelming users with charts, RestIQ answers:
+
+* 😴 *How well did I actually sleep?*
+* 📈 *Am I improving?*
+* ⏰ *When should I go to bed tonight?*
+* 💡 *What small habit should I change next?*
+
+---
+
+# ✨ Features
+
+| Feature                       | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| 🗣 Natural Language Check-ins | Log sleep naturally instead of filling forms                   |
+| 🤖 Multi-Agent AI             | Specialized agents collaborate to analyze your sleep           |
+| 📊 Sleep Score                | Personalized score based on duration, consistency, and quality |
+| 🌙 Adaptive Bedtime           | Dynamically adjusts bedtime recommendations                    |
+| 📈 Weekly Reports             | Trend analysis with visual charts                              |
+| 📱 Telegram Integration       | Daily reminders and weekly summaries                           |
+| 💾 Persistent Storage         | Sleep history stored locally using SQLite                      |
+
+---
+
+# 🧠 Multi-Agent Workflow
+
+```
+User
+ │
+ ▼
+Intake Agent
+ │
+ ▼
+Scheduler Agent
+ │
+ ▼
+Tracker Agent
+ │
+ ▼
+Analyzer Agent
+ │
+ ▼
+Reporter Agent
+ │
+ ▼
+Dashboard / Telegram
+```
+
+Each agent has a dedicated responsibility:
+
+### Intake Agent
+
+* Understands natural language
+* Extracts sleep information
+* Validates user input
+
+### Scheduler Agent
+
+* Calculates circadian recommendations
+* Adjusts bedtime gradually
+* Evaluates improvement plans
+
+### Tracker Agent
+
+* Stores sleep records
+* Retrieves historical data
+* Manages user profiles
+
+### Analyzer Agent
+
+* Detects sleep trends
+* Identifies unhealthy habits
+* Generates personalized insights
+
+### Reporter Agent
+
+* Produces weekly summaries
+* Creates visual charts
+* Suggests actionable improvements
+
+---
+
+# 🏗 Architecture
+
+```
+                 Streamlit Dashboard
+                        │
+                        ▼
+                Agent Orchestrator
+                        │
+ ┌──────────┬──────────┬──────────┬──────────┬──────────┐
+ │ Intake   │Scheduler │ Tracker  │Analyzer  │Reporter  │
+ └──────────┴──────────┴──────────┴──────────┴──────────┘
+                        │
+                  MCP Tool Server
+                        │
+        ┌───────────────┴──────────────┐
+        │                              │
+     SQLite Database            Telegram Bot
+```
+
+---
+
+# 🛠 Tech Stack
+
+| Category           | Technology       |
+| ------------------ | ---------------- |
+| AI Agent Framework | Google ADK       |
+| Language Model     | Gemini 2.5 Flash |
+| MCP                | FastMCP          |
+| Frontend           | Streamlit        |
+| Notifications      | Telegram Bot     |
+| Database           | SQLite           |
+| Validation         | Pydantic         |
+| Visualization      | Plotly           |
+
+---
+
+# 📂 Project Structure
+
+```text
+restiq/
+│
+├── agents/
+│   ├── intake.py
+│   ├── scheduler.py
+│   ├── tracker.py
+│   ├── analyzer.py
+│   └── reporter.py
+│
+├── restiq_agent/
+│   ├── __init__.py
+│   └── agent.py
+│
+├── pipeline.py
+├── mcp_server.py
+├── mcp_client.py
+├── plan_engine.py
+├── schemas.py
+├── streamlit_app.py
+├── bot.py
+├── logger_config.py
+├── sleep_data.db
+├── requirements.txt
+└── README.md
+```
+
+---
+
+# 🚀 Getting Started
+
+## Clone Repository
+
+```bash
+git clone https://github.com/yourusername/restiq.git
+
+cd restiq
+```
+
+## Create Virtual Environment
+
+Windows
+
+```bash
+python -m venv venv
+
+venv\Scripts\activate
+```
+
+Mac/Linux
+
+```bash
+python -m venv venv
+
+source venv/bin/activate
+```
+
+## Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## Configure Environment
+
+Create a `.env`
+
+```env
+GOOGLE_API_KEY=YOUR_API_KEY
+
+GEMINI_MODEL=gemini-2.5-flash
+
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+
+TELEGRAM_BOT_USERNAME=YOUR_BOT
+```
+
+---
+
+# ▶ Running RestIQ
+
+Start Streamlit
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Start Telegram Bot
+
+```bash
+python bot.py
+```
+
+Run Agent Development UI
+
+```bash
+adk web restiq_agent
+```
+
+Run Full Pipeline
+
+```bash
+python pipeline.py
+```
+
+---
+
+# 📱 Example User Journey
+
+### Step 1
+
+Register through the dashboard.
+
+↓
+
+### Step 2
+
+Connect Telegram using the generated deep link.
+
+↓
+
+### Step 3
+
+Log today's sleep.
+
+Example:
+
+> "I slept from 11 PM until 7 AM. Woke up once and felt refreshed."
+
+↓
+
+### Step 4
+
+RestIQ analyzes your sleep.
+
+Example Output
+
+```
+Sleep Score: 87/100
+
+Duration:
+8 hours
+
+Quality:
+Good
+
+Recommendation:
+Move bedtime 15 minutes earlier this week.
+
+Weekly Trend:
+Improving consistency.
+```
+
+---
+
+# 🔧 MCP Tools
+
+| Tool                | Purpose                  |
+| ------------------- | ------------------------ |
+| register_user       | Create user profile      |
+| link_telegram       | Connect Telegram account |
+| parse_sleep_input   | Parse natural language   |
+| calculate_circadian | Recommend bedtime        |
+| evaluate_plan       | Update sleep plan        |
+| store_sleep_data    | Save sleep record        |
+| analyze_patterns    | Detect trends            |
+| generate_report     | Produce weekly report    |
+| get_user_profile    | Retrieve profile         |
+
+---
+
+# 🎓 Google x Kaggle AI Agents Intensive
+
+This project demonstrates concepts learned throughout the course.
+
+| Day   | Applied Concept                  |
+| ----- | -------------------------------- |
+| Day 1 | Prompt Engineering & Vibe Coding |
+| Day 2 | MCP & Agent Communication        |
+| Day 3 | Agent Skills & Planning          |
+| Day 4 | Identity & Secure Design         |
+| Day 5 | Production Multi-Agent System    |
+
+---
+
+# 🔮 Future Improvements
+
+* Apple Health integration
+* Google Fit integration
+* Wearable device support
+* AI-powered sleep forecasting
+* Personalized sleep coaching memory
+* Calendar-aware bedtime recommendations
+
+---
+
+# 📸 Demo
+
+> *(Add screenshots or GIFs here)*
+
+Dashboard
+
+```
+images/dashboard.png
+```
+
+Weekly Report
+
+```
+images/report.png
+```
+
+Telegram Bot
+
+```
+images/telegram.png
+```
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+<div align="center">
+
+Built for the **Google x Kaggle 5-Day AI Agents Intensive**.
+
+Made with ❤️ to help people build healthier sleep habits.
+
+</div>

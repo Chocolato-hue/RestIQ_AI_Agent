@@ -146,6 +146,8 @@ if __name__ == "__main__":
         caffeine_after_2pm=False,
         exercise_today=True,
         screen_time_before_bed=False,
+        focus_level=4,
+        energy_level=4,
         notes="Spent time reading a book before bed.",
         score=None
     )

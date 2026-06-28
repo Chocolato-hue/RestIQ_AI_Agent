@@ -27,11 +27,17 @@ from schemas import (
     SleepAnalysisSchema,
     WeeklyReportSchema,
     MCPToolResponseSchema,
+    PlanAdjustmentSchema,
+    TelegramLinkSchema,
+    PlanStatus,
     SleepQuality,
     MoodOnWake,
     VerdictLabel,
     CaffeineSensitivity
 )
+
+# Import plan decision logic (kept separate from this transport/MCP layer)
+import plan_engine
 
 # Initialize MCP server
 mcp = FastMCP("restiq-sleep-server")
@@ -57,6 +63,8 @@ def init_db():
         caffeine_after_2pm INTEGER,
         exercise_today INTEGER,
         screen_time_before_bed INTEGER,
+        focus_level INTEGER,
+        energy_level INTEGER,
         notes TEXT,
         score INTEGER,
         PRIMARY KEY (user_id, date)
@@ -69,13 +77,38 @@ def init_db():
         user_id TEXT PRIMARY KEY,
         username TEXT,
         target_wake_time TEXT,
+        target_bedtime TEXT,
         target_sleep_duration REAL,
         caffeine_sensitivity TEXT,
         check_in_streak INTEGER,
         total_entries INTEGER,
+        plan_status TEXT,
+        plan_updated_at TEXT,
+        telegram_chat_id TEXT,
+        telegram_linked_at TEXT,
+        preferred_checkin_time TEXT,
         created_at TEXT
     )
     """)
+    
+    # Lightweight migration: add new columns to pre-existing databases that
+    # were created before this version (CREATE TABLE IF NOT EXISTS won't
+    # retroactively add columns to a table that already exists).
+    def _ensure_column(table: str, column: str, col_type: str, default_sql: str = "NULL"):
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if column not in existing_cols:
+            logger.info("[MCP] Migrating: adding column '%s' to table '%s'", column, table)
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type} DEFAULT {default_sql}")
+
+    _ensure_column("sleep_entries", "focus_level", "INTEGER", "3")
+    _ensure_column("sleep_entries", "energy_level", "INTEGER", "3")
+    _ensure_column("users", "target_bedtime", "TEXT", "'23:00'")
+    _ensure_column("users", "plan_status", "TEXT", "'INSUFFICIENT_DATA'")
+    _ensure_column("users", "plan_updated_at", "TEXT", "NULL")
+    _ensure_column("users", "telegram_chat_id", "TEXT", "NULL")
+    _ensure_column("users", "telegram_linked_at", "TEXT", "NULL")
+    _ensure_column("users", "preferred_checkin_time", "TEXT", "NULL")
     
     conn.commit()
     conn.close()
@@ -143,13 +176,197 @@ def compute_sleep_score(entry: SleepEntrySchema) -> int:
 # ──────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def register_user(user_id: str, username: str, target_wake_time: str = "07:00") -> dict:
+    """
+    Profile Agent tool (web registration).
+    Creates a new user profile with sensible defaults, intended to be called
+    when someone signs up on the web dashboard BEFORE their first check-in
+    (unlike the legacy path in store_sleep_data, which only ever created a
+    user row as a side effect of a first sleep log). Idempotent: calling this
+    again for an existing user_id leaves their existing row untouched rather
+    than overwriting their progress.
+    Return MCPToolResponseSchema with the resulting UserProfileSchema as dict.
+    """
+    logger.info("[MCP] register_user called for user_id: %s, username: %s", user_id, username)
+    try:
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string.")
+
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        created_at = datetime.datetime.now().isoformat()
+
+        # INSERT OR IGNORE: if this user_id already exists (e.g. the person
+        # re-registers, or registered then later checked in), this is a no-op
+        # rather than clobbering their existing streak/plan/Telegram link.
+        cursor.execute("""
+        INSERT OR IGNORE INTO users (
+            user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
+            caffeine_sensitivity, check_in_streak, total_entries, plan_status, plan_updated_at,
+            telegram_chat_id, telegram_linked_at, preferred_checkin_time, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            username,
+            target_wake_time,
+            "23:00",
+            8.0,
+            "MEDIUM",
+            0,
+            0,
+            PlanStatus.INSUFFICIENT_DATA.value,
+            None,
+            None,
+            None,
+            None,
+            created_at
+        ))
+        conn.commit()
+
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            raise ValueError(f"Failed to create or find user profile for user_id '{user_id}'.")
+
+        profile = UserProfileSchema(
+            user_id=row["user_id"],
+            username=row["username"],
+            target_wake_time=row["target_wake_time"],
+            target_bedtime=row["target_bedtime"],
+            target_sleep_duration=row["target_sleep_duration"],
+            caffeine_sensitivity=row["caffeine_sensitivity"],
+            check_in_streak=row["check_in_streak"],
+            total_entries=row["total_entries"],
+            plan_status=row["plan_status"],
+            plan_updated_at=row["plan_updated_at"],
+            telegram_chat_id=row["telegram_chat_id"],
+            telegram_linked_at=row["telegram_linked_at"],
+            preferred_checkin_time=row["preferred_checkin_time"],
+            created_at=row["created_at"],
+        )
+
+        tool_response = MCPToolResponseSchema(
+            tool_name="register_user",
+            success=True,
+            data=profile.model_dump(mode="json"),
+            error=None,
+            agent_next=None
+        )
+        return tool_response.model_dump(mode="json")
+
+    except Exception as e:
+        logger.error("[MCP] Error in register_user: %s", str(e), exc_info=True)
+        tool_response = MCPToolResponseSchema(
+            tool_name="register_user",
+            success=False,
+            data=None,
+            error=str(e),
+            agent_next=None
+        )
+        return tool_response.model_dump(mode="json")
+
+
+@mcp.tool()
+def link_telegram(user_id: str, telegram_chat_id: str) -> dict:
+    """
+    Profile Agent tool (Telegram linking).
+    Records that a web-registered user_id should receive Telegram
+    notifications at the given chat_id. Called by bot.py when a user starts
+    the bot via a deep link of the form /start <user_id> (the payload is the
+    user_id assigned during web registration). If user_id doesn't exist yet
+    (someone linked Telegram before ever registering on the web), creates a
+    minimal profile so the link isn't silently dropped. Re-linking the same
+    user_id to a new chat_id overwrites the previous chat_id (one active
+    Telegram link per user_id at a time).
+    Return MCPToolResponseSchema with TelegramLinkSchema as dict.
+    """
+    logger.info("[MCP] link_telegram called for user_id: %s, telegram_chat_id: %s", user_id, telegram_chat_id)
+    try:
+        if not user_id or not telegram_chat_id:
+            raise ValueError("user_id and telegram_chat_id must both be non-empty.")
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT telegram_chat_id FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        already_linked = bool(row and row[0])
+        linked_at = datetime.datetime.now()
+
+        if row is None:
+            # No profile yet (Telegram-first path) — create a minimal one so
+            # the link has somewhere to attach, consistent with the defaults
+            # register_user would otherwise have set up.
+            cursor.execute("""
+            INSERT INTO users (
+                user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
+                caffeine_sensitivity, check_in_streak, total_entries, plan_status, plan_updated_at,
+                telegram_chat_id, telegram_linked_at, preferred_checkin_time, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id,
+                f"User_{user_id}",
+                "07:00",
+                "23:00",
+                8.0,
+                "MEDIUM",
+                0,
+                0,
+                PlanStatus.INSUFFICIENT_DATA.value,
+                None,
+                telegram_chat_id,
+                linked_at.isoformat(),
+                None,
+                linked_at.isoformat()
+            ))
+        else:
+            cursor.execute("""
+            UPDATE users SET telegram_chat_id = ?, telegram_linked_at = ? WHERE user_id = ?
+            """, (telegram_chat_id, linked_at.isoformat(), user_id))
+
+        conn.commit()
+        conn.close()
+
+        link_result = TelegramLinkSchema(
+            user_id=user_id,
+            telegram_chat_id=telegram_chat_id,
+            already_linked=already_linked,
+            linked_at=linked_at,
+        )
+
+        tool_response = MCPToolResponseSchema(
+            tool_name="link_telegram",
+            success=True,
+            data=link_result.model_dump(mode="json"),
+            error=None,
+            agent_next=None
+        )
+        return tool_response.model_dump(mode="json")
+
+    except Exception as e:
+        logger.error("[MCP] Error in link_telegram: %s", str(e), exc_info=True)
+        tool_response = MCPToolResponseSchema(
+            tool_name="link_telegram",
+            success=False,
+            data=None,
+            error=str(e),
+            agent_next=None
+        )
+        return tool_response.model_dump(mode="json")
+
+
+@mcp.tool()
 def parse_sleep_input(user_id: str, raw_text: str) -> dict:
     """
     Intake Agent tool.
     Parse natural language sleep input into structured SleepEntrySchema.
     Use Gemini to extract: bedtime, wake_time, wake_up_count,
     sleep_quality, mood_on_wake, caffeine_after_2pm,
-    exercise_today, screen_time_before_bed, notes.
+    exercise_today, screen_time_before_bed, focus_level, energy_level, notes.
     Calculate sleep_duration from bedtime to wake_time.
     Return MCPToolResponseSchema as dict.
     """
@@ -170,6 +387,8 @@ def parse_sleep_input(user_id: str, raw_text: str) -> dict:
             caffeine_after_2pm: bool = Field(..., description="Whether caffeine was consumed after 2:00 PM")
             exercise_today: bool = Field(..., description="Whether the user exercised during the day")
             screen_time_before_bed: bool = Field(..., description="Whether the user had screen time within 1 hour before bed")
+            focus_level: int = Field(..., ge=1, le=5, description="Focus/concentration level today, inferred from explicit statements only (1=very poor, 5=excellent)")
+            energy_level: int = Field(..., ge=1, le=5, description="Energy level today, inferred from explicit statements only (1=very low, 5=excellent)")
             notes: Optional[str] = Field(None, description="Any additional notes or observations")
 
         system_instruction = (
@@ -185,6 +404,12 @@ def parse_sleep_input(user_id: str, raw_text: str) -> dict:
             "- caffeine_after_2pm: boolean (true/false)\n"
             "- exercise_today: boolean (true/false)\n"
             "- screen_time_before_bed: boolean (true/false)\n"
+            "- focus_level: integer 1-5. Only infer this from explicit statements about concentration, "
+            "distraction, or mental clarity (e.g. 'couldn't focus' -> low, 'sharp all day' -> high). "
+            "If the user says nothing relevant to focus, use 3 (neutral) rather than guessing.\n"
+            "- energy_level: integer 1-5. Only infer this from explicit statements about tiredness, "
+            "fatigue, or energy (e.g. 'exhausted', 'felt sluggish' -> low, 'felt great, lots of energy' -> high). "
+            "If the user says nothing relevant to energy, use 3 (neutral) rather than guessing.\n"
             "- notes: str or null"
         )
         
@@ -224,6 +449,8 @@ def parse_sleep_input(user_id: str, raw_text: str) -> dict:
             caffeine_after_2pm=extracted.caffeine_after_2pm,
             exercise_today=extracted.exercise_today,
             screen_time_before_bed=extracted.screen_time_before_bed,
+            focus_level=extracted.focus_level,
+            energy_level=extracted.energy_level,
             notes=extracted.notes,
             score=None
         )
@@ -305,7 +532,7 @@ def calculate_circadian(wake_time: str, sleep_duration: float = 8.0) -> dict:
 def store_sleep_data(entry: dict) -> dict:
     """
     Tracker Agent tool.
-    Validate entry as SleepEntrySchema.
+    Validate entry as SleepEntrySchema (including focus_level/energy_level).
     Insert into sleep_entries SQLite table.
     Update user check_in_streak and total_entries.
     Return MCPToolResponseSchema with success status.
@@ -321,8 +548,8 @@ def store_sleep_data(entry: dict) -> dict:
         INSERT OR REPLACE INTO sleep_entries (
             user_id, date, bedtime, wake_time, sleep_duration, wake_up_count,
             sleep_quality, mood_on_wake, caffeine_after_2pm, exercise_today,
-            screen_time_before_bed, notes, score
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            screen_time_before_bed, focus_level, energy_level, notes, score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             validated.user_id,
             validated.date.isoformat() if isinstance(validated.date, date) else validated.date,
@@ -335,6 +562,8 @@ def store_sleep_data(entry: dict) -> dict:
             1 if validated.caffeine_after_2pm else 0,
             1 if validated.exercise_today else 0,
             1 if validated.screen_time_before_bed else 0,
+            validated.focus_level,
+            validated.energy_level,
             validated.notes,
             validated.score
         ))
@@ -358,17 +587,20 @@ def store_sleep_data(entry: dict) -> dict:
             # Create default user profile
             cursor.execute("""
             INSERT INTO users (
-                user_id, username, target_wake_time, target_sleep_duration,
-                caffeine_sensitivity, check_in_streak, total_entries, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
+                caffeine_sensitivity, check_in_streak, total_entries, plan_status, plan_updated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 validated.user_id,
                 f"User_{validated.user_id}",
                 "07:00",
+                "23:00",
                 8.0,
                 "MEDIUM",
                 1,
                 1,
+                PlanStatus.INSUFFICIENT_DATA.value,
+                None,
                 datetime.datetime.now().isoformat()
             ))
         else:
@@ -409,6 +641,108 @@ def store_sleep_data(entry: dict) -> dict:
         logger.error("[MCP] Error in store_sleep_data: %s", str(e), exc_info=True)
         tool_response = MCPToolResponseSchema(
             tool_name="store_sleep_data",
+            success=False,
+            data=None,
+            error=str(e),
+            agent_next=None
+        )
+        return tool_response.model_dump(mode="json")
+
+
+@mcp.tool()
+def evaluate_plan(user_id: str, commit_weekly_adjustment: bool = False) -> dict:
+    """
+    Scheduler Agent tool (adaptive plan).
+    Fetches the user's recent sleep scores (most-recent-first) and current
+    target_bedtime, then delegates the actual decision logic to plan_engine.
+    Rule order: streak override (3 consecutive nights < 50) > rolling 7-day
+    trend vs previous 7-day window. The rolling trend only commits a target
+    bedtime change when commit_weekly_adjustment=True (i.e. called from the
+    weekly report flow); daily check-ins pass False so the trend is reported
+    without nudging the plan every single day. A confirmed streak override
+    always commits regardless of commit_weekly_adjustment.
+    Persists any committed change to the users table (target_bedtime,
+    plan_status, plan_updated_at).
+    Return PlanAdjustmentSchema as dict wrapped in MCPToolResponseSchema.
+    """
+    logger.info(
+        "[MCP] evaluate_plan called for user_id: %s, commit_weekly_adjustment: %s",
+        user_id, commit_weekly_adjustment
+    )
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT target_bedtime FROM users WHERE user_id = ?", (user_id,)
+        )
+        user_row = cursor.fetchone()
+        current_target_bedtime = user_row["target_bedtime"] if user_row and user_row["target_bedtime"] else "23:00"
+
+        # Up to 14 most recent scored nights, most-recent-first, to support
+        # both the streak check (last 3) and the rolling 7-vs-7 comparison.
+        cursor.execute("""
+        SELECT date, score FROM sleep_entries
+        WHERE user_id = ? AND score IS NOT NULL
+        ORDER BY date DESC LIMIT 14
+        """, (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        scores_recent_first = [row["score"] for row in rows]
+
+        adjustment = plan_engine.evaluate_plan(
+            user_id=user_id,
+            scores_recent_first=scores_recent_first,
+            current_target_bedtime=current_target_bedtime,
+            commit_weekly_adjustment=commit_weekly_adjustment,
+        )
+
+        if adjustment.adjusted:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("""
+            UPDATE users
+            SET target_bedtime = ?, plan_status = ?, plan_updated_at = ?
+            WHERE user_id = ?
+            """, (
+                adjustment.new_target_bedtime,
+                adjustment.status.value,
+                datetime.datetime.now().isoformat(),
+                user_id
+            ))
+            conn.commit()
+            conn.close()
+            logger.info(
+                "[MCP] Plan adjusted for user_id '%s': %s -> %s (%s)",
+                user_id, adjustment.previous_target_bedtime, adjustment.new_target_bedtime, adjustment.triggered_by.value
+            )
+        else:
+            # Even without an adjustment, keep plan_status current so the
+            # stored profile reflects the latest known trend.
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET plan_status = ? WHERE user_id = ?",
+                (adjustment.status.value, user_id)
+            )
+            conn.commit()
+            conn.close()
+
+        tool_response = MCPToolResponseSchema(
+            tool_name="evaluate_plan",
+            success=True,
+            data=adjustment.model_dump(mode="json"),
+            error=None,
+            agent_next="ReporterAgent"
+        )
+        return tool_response.model_dump(mode="json")
+
+    except Exception as e:
+        logger.error("[MCP] Error in evaluate_plan: %s", str(e), exc_info=True)
+        tool_response = MCPToolResponseSchema(
+            tool_name="evaluate_plan",
             success=False,
             data=None,
             error=str(e),

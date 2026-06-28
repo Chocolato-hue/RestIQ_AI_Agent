@@ -1,0 +1,26 @@
+2026-06-28 00:54:23 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating daily prompt for user_id 'pipeline_test_user'
+2026-06-28 00:54:25 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating daily prompt for user_id 'pipeline_test_user'
+2026-06-28 00:54:25 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Handling check-in for user_id 'pipeline_test_user'
+2026-06-28 14:38:04 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating daily prompt for user_id 'pipeline_test_user'
+2026-06-28 14:38:05 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating daily prompt for user_id 'pipeline_test_user'
+2026-06-28 14:38:05 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Handling check-in for user_id 'pipeline_test_user'
+2026-06-28 14:38:16 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Check-in complete, score: 92
+2026-06-28 14:38:16 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating weekly report for user_id 'pipeline_test_user'
+2026-06-28 14:38:26 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Weekly report complete for user_id 'pipeline_test_user'
+2026-06-28 14:39:38 | [BOT]        | INFO     | bot | [BOT] Initializing RestIQ bot...
+2026-06-28 14:39:39 | [BOT]        | INFO     | bot | [BOT] RestIQ bot started
+2026-06-28 14:43:05 | [BOT]        | INFO     | bot | [BOT] Initializing RestIQ bot...
+2026-06-28 14:43:05 | [BOT]        | INFO     | bot | [BOT] RestIQ bot started
+2026-06-28 14:43:53 | [BOT]        | INFO     | bot | [BOT] New user started: Anele7_7
+2026-06-28 14:44:31 | [BOT]        | INFO     | bot | [BOT] Awaiting check-in from user_id: 1136913881
+2026-06-28 14:44:37 | [BOT]        | INFO     | bot | [BOT] Message received from Anele7_7
+2026-06-28 14:44:38 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Handling check-in for user_id '1136913881'
+2026-06-28 14:44:49 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Check-in complete, score: 70
+2026-06-28 14:44:49 | [BOT]        | INFO     | bot | [BOT] Check-in complete, score: 70
+2026-06-28 14:45:05 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Generating weekly report for user_id '1136913881'
+2026-06-28 14:45:11 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Weekly report complete for user_id '1136913881'
+2026-06-28 14:45:14 | [BOT]        | INFO     | bot | [BOT] Weekly report sent to user_id: 1136913881
+2026-06-28 18:22:01 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Handling check-in for user_id 'Ada Lovelace'
+2026-06-28 18:22:13 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Check-in complete, score: 70
+2026-06-28 18:38:59 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Handling check-in for user_id 'Ada Lovelace'
+2026-06-28 18:39:12 | [PIPELINE]   | INFO     | pipeline | [PIPELINE] Check-in complete, score: 38

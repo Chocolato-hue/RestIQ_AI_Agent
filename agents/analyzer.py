@@ -145,13 +145,15 @@ def seed_test_data(user_id: str):
     CREATE TABLE IF NOT EXISTS sleep_entries (
         user_id TEXT, date TEXT, bedtime TEXT, wake_time TEXT, sleep_duration REAL, wake_up_count INTEGER,
         sleep_quality TEXT, mood_on_wake TEXT, caffeine_after_2pm INTEGER, exercise_today INTEGER,
-        screen_time_before_bed INTEGER, notes TEXT, score INTEGER, PRIMARY KEY (user_id, date)
+        screen_time_before_bed INTEGER, focus_level INTEGER, energy_level INTEGER, notes TEXT, score INTEGER,
+        PRIMARY KEY (user_id, date)
     )
     """)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        user_id TEXT PRIMARY KEY, username TEXT, target_wake_time TEXT, target_sleep_duration REAL,
-        caffeine_sensitivity TEXT, check_in_streak INTEGER, total_entries INTEGER, created_at TEXT
+        user_id TEXT PRIMARY KEY, username TEXT, target_wake_time TEXT, target_bedtime TEXT, target_sleep_duration REAL,
+        caffeine_sensitivity TEXT, check_in_streak INTEGER, total_entries INTEGER,
+        plan_status TEXT, plan_updated_at TEXT, created_at TEXT
     )
     """)
     
@@ -159,10 +161,10 @@ def seed_test_data(user_id: str):
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
         INSERT OR REPLACE INTO users (
-            user_id, username, target_wake_time, target_sleep_duration,
-            caffeine_sensitivity, check_in_streak, total_entries, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, "Test User", "07:00", 8.0, "MEDIUM", 7, 7, datetime.datetime.now().isoformat()))
+            user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
+            caffeine_sensitivity, check_in_streak, total_entries, plan_status, plan_updated_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, "Test User", "07:00", "23:00", 8.0, "MEDIUM", 7, 7, "INSUFFICIENT_DATA", None, datetime.datetime.now().isoformat()))
         
         # Seed 7 days of sleep logs, making caffeine nights correlate with low scores
         for i in range(7):
@@ -174,8 +176,8 @@ def seed_test_data(user_id: str):
             INSERT OR REPLACE INTO sleep_entries (
                 user_id, date, bedtime, wake_time, sleep_duration, wake_up_count,
                 sleep_quality, mood_on_wake, caffeine_after_2pm, exercise_today,
-                screen_time_before_bed, notes, score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                screen_time_before_bed, focus_level, energy_level, notes, score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
                 log_date.isoformat(),
@@ -188,6 +190,8 @@ def seed_test_data(user_id: str):
                 1 if has_caffeine else 0,
                 0 if has_caffeine else 1,
                 1 if has_caffeine else 0,
+                2 if has_caffeine else 4,
+                2 if has_caffeine else 4,
                 "Seeded test log.",
                 score
             ))
