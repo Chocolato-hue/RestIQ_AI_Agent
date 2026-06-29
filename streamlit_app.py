@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 import re
 import streamlit as st
+# pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 load_dotenv()
@@ -162,85 +163,230 @@ tab_checkin, tab_report, tab_plan = st.tabs(["Check-in", "Weekly Report", "Plan 
 # ── Tab 1: Check-in ──────────────────────────────────────────────────────────
 
 with tab_checkin:
-    st.subheader("Log last night's sleep")
-    raw_text = st.text_area(
-        "Tell me about last night",
-        placeholder=(
-            "Went to bed at 11pm, woke up at 7am, woke up once, slept okay, "
-            "felt a bit tired, no caffeine after 2, didn't exercise, used my phone before bed."
-        ),
-        height=120,
-    )
-    if st.button("Submit check-in", type="primary"):
-        if not raw_text.strip():
-            st.warning("Type something about last night's sleep first.")
-        else:
-            with st.spinner("Analyzing your sleep..."):
-                try:
-                    result = run_checkin(user_id, raw_text)
-                    st.success("Logged!")
-                    entry = result["entry"]
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Sleep score", f"{entry.score}/100")
-                    col2.metric("Duration", f"{entry.sleep_duration}h")
-                    col3.metric("Tonight's bedtime", result["circadian"].recommended_bedtime)
-                    if result["plan_adjustment"].adjusted:
-                        st.info(f"📋 Plan update: {result['plan_adjustment'].reason}")
-                    st.text(result["reply_message"])
-                except Exception as e:
-                    st.error(f"Couldn't process that check-in: {e}")
+    st.write("")
+    st.markdown("### 📝 Daily Check-in")
+    with st.container(border=True):
+        raw_text = st.text_area(
+            "Tell me about last night",
+            placeholder=(
+                "Went to bed at 11pm, woke up at 7am, woke up once, slept okay, "
+                "felt a bit tired, no caffeine after 2, didn't exercise, used my phone before bed."
+            ),
+            height=120,
+        )
+        st.write("")
+        if st.button("Submit check-in", type="primary", use_container_width=True):
+            if not raw_text.strip():
+                st.warning("Type something about last night's sleep first.")
+            else:
+                with st.spinner("Analyzing your sleep..."):
+                    try:
+                        result = run_checkin(user_id, raw_text)
+                        st.write("")
+                        with st.container(border=True):
+                            st.success("✅ **Logged successfully!**")
+                            entry = result["entry"]
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("Sleep score", f"{entry.score}/100")
+                            col2.metric("Duration", f"{entry.sleep_duration}h")
+                            col3.metric("Tonight's bedtime", result["circadian"].recommended_bedtime)
+                            st.divider()
+                            if result["plan_adjustment"].adjusted:
+                                st.info(f"📋 **Plan update:** {result['plan_adjustment'].reason}")
+                            st.write(f"💬 {result['reply_message']}")
+                    except Exception as e:
+                        st.error(f"Couldn't process that check-in: {e}")
 
 # ── Tab 2: Weekly Report ─────────────────────────────────────────────────────
 
 with tab_report:
-    st.subheader("This week's report")
-    if st.button("Generate weekly report"):
+    st.write("")
+    st.markdown("### 📈 Weekly Report")
+    with st.container(border=True):
+        st.write("Generate your comprehensive weekly sleep analysis.")
+        st.write("")
+        btn_generate = st.button("Generate weekly report", type="primary", use_container_width=True)
+        
+    if btn_generate:
         with st.spinner("Generating report..."):
             try:
                 result = run_weekly_report(user_id)
                 analysis = result["analysis"]
                 report = result["report"]
 
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Avg score", f"{analysis.average_score}/100")
-                col2.metric("Avg duration", f"{analysis.average_duration}h")
-                col3.metric("Avg wake-ups", f"{analysis.average_wake_ups}")
-                col4.metric("Streak", f"{analysis.streak_days} days")
+                history = run_get_history(user_id, days=7)
+                history_count = len(history) if history else 0
+
+                main_issue = "Maintain consistency"
+                if analysis.average_duration < 7:
+                    main_issue = "Sleep duration below 7 hours"
+                elif analysis.average_wake_ups > 1:
+                    main_issue = "Frequent wake-ups"
+                elif analysis.screen_time_impact and "drop" in analysis.screen_time_impact.lower():
+                    main_issue = "Screen time before bed"
+                elif analysis.caffeine_impact and "drop" in analysis.caffeine_impact.lower():
+                    main_issue = "Late caffeine intake"
+
+                verdict_val = analysis.verdict.value if hasattr(analysis.verdict, "value") else str(analysis.verdict)
+
+                st.write("")
+                st.divider()
+
+                # --- SECTION: HEALTH SCORE ---
+                st.markdown("## 🩺 Sleep Health Score")
+                with st.container(border=True):
+                    if verdict_val == "EXCELLENT":
+                        st.success("### 🟢 Excellent")
+                        st.write("Excellent week! Keep maintaining your routine.")
+                    elif verdict_val == "ON_TRACK":
+                        st.warning("### 🟡 On Track")
+                        st.write("You're on track! Keep up the good work.")
+                    elif verdict_val == "IMPROVING":
+                        st.warning("### 🟠 Improving")
+                        st.write("You're improving. Small bedtime adjustments will make a big difference.")
+                    else:
+                        st.error("### 🔴 Needs Attention")
+                        st.write("Let's focus on consistency. Review the recommendations below.")
+
+                st.write("")
+
+                # --- SECTION: SUMMARY METRICS ---
+                st.markdown("## 🎯 Weekly Summary")
+                with st.container(border=True):
+                    status_col, focus_col = st.columns(2)
+                    with status_col:
+                        if verdict_val == "EXCELLENT":
+                            st.success("🟢 **Goal Status:** Achieved")
+                        elif verdict_val == "ON_TRACK":
+                            st.warning("🟡 **Goal Status:** On Track")
+                        elif verdict_val == "IMPROVING":
+                            st.warning("🟠 **Goal Status:** Improving")
+                        else:
+                            st.error("🔴 **Goal Status:** Needs Improvement")
+
+                    with focus_col:
+                        st.info(f"🎯 **Main Focus:** {main_issue}")
+
+                    st.divider()
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        with st.container(border=True):
+                            st.metric("📈 Avg Score", f"{analysis.average_score}/100")
+                    with col2:
+                        with st.container(border=True):
+                            st.metric("⏳ Avg Sleep", f"{analysis.average_duration}h")
+                    with col3:
+                        with st.container(border=True):
+                            st.metric("🔔 Avg Wake-ups", f"{analysis.average_wake_ups}")
+                    with col4:
+                        with st.container(border=True):
+                            st.metric("🔥 Streak", f"{analysis.streak_days} days")
+
+                    st.write("") # Spacing
+
+                    if analysis.best_night and analysis.worst_night:
+                        if history_count < 2 or analysis.best_night.date == analysis.worst_night.date:
+                            st.info("ℹ️ More daily check-ins are needed to compare your best and worst nights.")
+                        else:
+                            best_col, worst_col = st.columns(2)
+                            best_col.success(
+                                f"🌟 **Best night:** {analysis.best_night.date} "
+                                f"({analysis.best_night.score}/100)"
+                            )
+                            worst_col.warning(
+                                f"⚠️ **Needs attention:** {analysis.worst_night.date} "
+                                f"({analysis.worst_night.score}/100)"
+                            )
 
                 if result["plan_adjustment"].triggered_by.value != "NONE":
-                    st.info(f"📋 Plan update: {result['plan_adjustment'].reason}")
+                    st.write("")
+                    st.info(f"📋 **Plan update:** {result['plan_adjustment'].reason}")
 
-                history = run_get_history(user_id, days=7)
-                if history:
-                    history_sorted = sorted(history, key=lambda e: e.date)
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=[e.date for e in history_sorted],
-                        y=[e.score for e in history_sorted],
-                        mode="lines+markers",
-                        name="Sleep score",
-                        line=dict(width=3),
-                    ))
-                    fig.update_layout(
-                        yaxis_range=[0, 100],
-                        margin=dict(l=10, r=10, t=10, b=10),
-                        height=300,
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.caption("Not enough history yet to chart.")
+                st.write("")
 
-                st.markdown("**Patterns detected**")
-                for p in analysis.patterns_detected:
-                    st.write(f"- {p}")
+                # --- SECTION: TRENDS ---
+                st.markdown("## 📈 Sleep Trends")
+                with st.container(border=True):
+                    if history:
+                        history_sorted = sorted(history, key=lambda e: e.date)
+                        fig = go.Figure()
+                        
+                        x_days = [__import__('datetime').datetime.strptime(str(e.date), "%Y-%m-%d").strftime("%a") for e in history_sorted]
+                        
+                        fig.add_trace(go.Scatter(
+                            x=x_days,
+                            y=[e.score for e in history_sorted],
+                            mode="lines+markers",
+                            name="Sleep score",
+                            line=dict(width=3, shape="spline"),
+                            marker=dict(size=8),
+                            hovertemplate="<b>%{x}</b>: %{y} Score<extra></extra>",
+                        ))
+                        fig.update_layout(
+                            yaxis_range=[0, 100],
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            height=300,
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.caption("Not enough history yet to chart.")
 
-                st.markdown("**Recommendations**")
-                for r in analysis.recommendations:
-                    st.write(f"- {r}")
+                st.write("")
 
-                st.markdown(f"**Next week's goal:** {report.next_week_goal}")
+                # --- SECTION: INSIGHTS ---
+                st.markdown("## 🧠 Insights & Patterns")
+                with st.container(border=True):
+                    if not analysis.patterns_detected:
+                        st.info("No significant patterns detected this week.")
+                    else:
+                        for p in analysis.patterns_detected:
+                            text_lower = p.lower()
+                            if "exercise" in text_lower or "improved" in text_lower or "better" in text_lower:
+                                st.success(f"✅ {p}")
+                            elif "caffeine" in text_lower or "coffee" in text_lower:
+                                st.warning(f"☕ {p}")
+                            elif "screen time" in text_lower or "phone" in text_lower or "screen" in text_lower:
+                                st.warning(f"⚠️ {p}")
+                            elif "consistent" in text_lower or "schedule" in text_lower:
+                                st.info(f"🌙 {p}")
+                            elif "reduced" in text_lower or "affected" in text_lower or "poor" in text_lower or "late" in text_lower:
+                                st.warning(f"⚠️ {p}")
+                            else:
+                                st.info(f"💡 {p}")
+
+                st.write("")
+
+                # --- SECTION: ACTION PLAN ---
+                st.markdown("## 📋 Action Plan")
+                st.write("")
+                st.markdown("#### Priority Recommendations")
+                for idx, r in enumerate(analysis.recommendations, start=1):
+                    parts = r.split(":", 1)
+                    if len(parts) > 1:
+                        title = parts[0].strip()
+                        explanation = parts[1].strip()
+                    else:
+                        # Fallback if there is no colon
+                        sentence_parts = r.split(". ", 1)
+                        if len(sentence_parts) > 1:
+                            title = sentence_parts[0].strip() + "."
+                            explanation = sentence_parts[1].strip()
+                        else:
+                            title = "Action Item"
+                            explanation = r.strip()
+
+                    with st.container(border=True):
+                        st.markdown(f"**🎯 Priority {idx} | {title}**")
+                        st.write(explanation)
+
+                st.write("")
+                st.markdown("#### Next Week Focus")
+                st.success(report.next_week_goal)
+
                 if report.milestone_message:
-                    st.success(report.milestone_message)
+                    st.write("")
+                    st.success(f"🏆 {report.milestone_message}")
 
             except Exception as e:
                 st.error(f"Couldn't generate the report: {e}")
@@ -248,20 +394,30 @@ with tab_report:
 # ── Tab 3: Plan History ──────────────────────────────────────────────────────
 
 with tab_plan:
-    st.subheader("Adaptive plan")
+    st.write("")
+    st.markdown("### 🎯 Adaptive Plan")
     st.caption("Re-evaluates your plan the same way the weekly report does, without committing a change.")
-    if st.button("Check current plan status"):
-        with st.spinner("Evaluating..."):
-            try:
-                adjustment = run_evaluate_plan(user_id, commit_weekly_adjustment=False)
-                st.metric("Status", adjustment.status.value)
-                if adjustment.rolling_avg_score is not None:
-                    col1, col2 = st.columns(2)
-                    col1.metric("This week's avg", adjustment.rolling_avg_score)
-                    if adjustment.previous_week_avg_score is not None:
-                        col2.metric("Last week's avg", adjustment.previous_week_avg_score)
-                st.write(adjustment.reason)
-                if adjustment.new_target_bedtime:
-                    st.caption(f"Current target bedtime: **{adjustment.new_target_bedtime}**")
-            except Exception as e:
-                st.error(f"Couldn't evaluate the plan: {e}")
+    with st.container(border=True):
+        if st.button("Check current plan status", use_container_width=True):
+            with st.spinner("Evaluating..."):
+                try:
+                    adjustment = run_evaluate_plan(user_id, commit_weekly_adjustment=False)
+                    st.divider()
+                    st.markdown("#### Plan Status")
+                    st.metric("Status", adjustment.status.value)
+                    if adjustment.rolling_avg_score is not None:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            with st.container(border=True):
+                                st.metric("This week's avg", adjustment.rolling_avg_score)
+                        with col2:
+                            if adjustment.previous_week_avg_score is not None:
+                                with st.container(border=True):
+                                    st.metric("Last week's avg", adjustment.previous_week_avg_score)
+                    
+                    st.write("")
+                    st.info(f"**Reasoning:** {adjustment.reason}")
+                    if adjustment.new_target_bedtime:
+                        st.success(f"**Current target bedtime:** {adjustment.new_target_bedtime}")
+                except Exception as e:
+                    st.error(f"Couldn't evaluate the plan: {e}")
