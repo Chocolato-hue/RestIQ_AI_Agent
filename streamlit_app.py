@@ -396,28 +396,70 @@ with tab_report:
 with tab_plan:
     st.write("")
     st.markdown("### 🎯 Adaptive Plan")
-    st.caption("Re-evaluates your plan the same way the weekly report does, without committing a change.")
+    st.caption("Understand whether your current sleep plan is working or needs adjustment.")
+
     with st.container(border=True):
         if st.button("Check current plan status", use_container_width=True):
-            with st.spinner("Evaluating..."):
+            with st.spinner("Evaluating your sleep plan..."):
                 try:
                     adjustment = run_evaluate_plan(user_id, commit_weekly_adjustment=False)
+
+                    status_map = {
+                        "IMPROVING": ("🟢 Improving", "Your sleep trend is moving in the right direction."),
+                        "STABLE": ("🔵 Stable", "Your sleep pattern is consistent. Keep maintaining your routine."),
+                        "DECLINING": ("🔴 Declining", "Your recent sleep trend needs attention."),
+                        "INSUFFICIENT_DATA": ("🟡 Not enough data yet", "Log more nights so RestIQ can detect reliable trends."),
+                    }
+
+                    status_label, status_message = status_map.get(
+                        adjustment.status.value,
+                        ("ℹ️ Unknown", "RestIQ could not classify your current plan status yet.")
+                    )
+
                     st.divider()
-                    st.markdown("#### Plan Status")
-                    st.metric("Status", adjustment.status.value)
-                    if adjustment.rolling_avg_score is not None:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            with st.container(border=True):
-                                st.metric("This week's avg", adjustment.rolling_avg_score)
-                        with col2:
+                    st.markdown("#### 🧭 Plan Status")
+
+                    st.info(f"**Status:** {status_label}")
+                    st.write(status_message)
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        with st.container(border=True):
+                            if adjustment.rolling_avg_score is not None:
+                                st.metric("This week's average", adjustment.rolling_avg_score)
+                            else:
+                                st.metric("This week's average", "Not enough data")
+
+                    with col2:
+                        with st.container(border=True):
                             if adjustment.previous_week_avg_score is not None:
-                                with st.container(border=True):
-                                    st.metric("Last week's avg", adjustment.previous_week_avg_score)
-                    
-                    st.write("")
-                    st.info(f"**Reasoning:** {adjustment.reason}")
+                                st.metric("Last week's average", adjustment.previous_week_avg_score)
+                            else:
+                                st.metric("Last week's average", "Not enough data")
+
+                    st.markdown("#### 🧠 Why this status?")
+                    st.info(adjustment.reason)
+
+                    st.markdown("#### 🎯 Current Plan")
                     if adjustment.new_target_bedtime:
-                        st.success(f"**Current target bedtime:** {adjustment.new_target_bedtime}")
+                        st.success(f"Target bedtime: **{adjustment.new_target_bedtime}**")
+                    else:
+                        st.success("Target bedtime: **23:00**")
+
+                    st.markdown("#### ✅ What should you do next?")
+                    if adjustment.status.value == "INSUFFICIENT_DATA":
+                        st.write("• Keep logging your sleep daily for at least 3–7 days.")
+                        st.write("• RestIQ will start detecting patterns once enough history is available.")
+                    elif adjustment.status.value == "IMPROVING":
+                        st.write("• Continue following your current bedtime routine.")
+                        st.write("• Avoid changing too many habits at once.")
+                    elif adjustment.status.value == "DECLINING":
+                        st.write("• Focus on your next-week goal from the Weekly Report.")
+                        st.write("• Reduce late caffeine and screen time before bed.")
+                    else:
+                        st.write("• Maintain consistency in bedtime and wake-up time.")
+                        st.write("• Review your Weekly Report for detailed recommendations.")
+
                 except Exception as e:
                     st.error(f"Couldn't evaluate the plan: {e}")
