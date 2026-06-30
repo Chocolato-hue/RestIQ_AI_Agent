@@ -156,8 +156,8 @@ restiq/
 │   └── agent.py
 │
 ├── pipeline.py
-├── mcp_server.py
-├── mcp_client.py
+├── services/              # Business logic (DB, scoring, intake, reports)
+├── mcp_server.py          # Thin MCP wrapper for ADK / external clients
 ├── plan_engine.py
 ├── schemas.py
 ├── streamlit_app.py

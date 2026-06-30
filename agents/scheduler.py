@@ -20,12 +20,12 @@ from schemas import (
     CircadianSchema,
     SmartFollowUpSchema,
     UserProfileSchema,
-    MCPToolResponseSchema,
     PlanAdjustmentSchema,
     SleepQuality,
     MoodOnWake
 )
-from mcp_client import get
+from services import circadian as circadian_service
+from services import plan as plan_service
 
 class SchedulerAgent:
     """
@@ -39,19 +39,7 @@ class SchedulerAgent:
         """
         logger.info("[SCHEDULER] Calculating circadian recommendations for wake_time='%s', duration=%s", wake_time, sleep_duration)
         try:
-            response_dict = get("calculate_circadian", {"wake_time": wake_time, "sleep_duration": sleep_duration})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success:
-                logger.info("[SCHEDULER] Successfully calculated circadian schedule.")
-                if tool_response.data:
-                    return CircadianSchema(**tool_response.data)
-                else:
-                    raise ValueError("MCP tool returned success but empty data payload.")
-            else:
-                error_msg = tool_response.error or "Unknown error"
-                logger.error("[SCHEDULER] MCP tool failed to calculate circadian: %s", error_msg)
-                raise ValueError(error_msg)
+            return circadian_service.calculate_circadian(wake_time, sleep_duration)
                 
         except Exception as e:
             logger.error("[SCHEDULER] Error during circadian calculation: %s", str(e), exc_info=True)
@@ -77,26 +65,7 @@ class SchedulerAgent:
             user_id, commit_weekly_adjustment
         )
         try:
-            response_dict = get("evaluate_plan", {
-                "user_id": user_id,
-                "commit_weekly_adjustment": commit_weekly_adjustment
-            })
-            tool_response = MCPToolResponseSchema(**response_dict)
-
-            if tool_response.success:
-                if tool_response.data:
-                    adjustment = PlanAdjustmentSchema(**tool_response.data)
-                    logger.info(
-                        "[SCHEDULER] Plan evaluation complete. Status: %s, adjusted: %s",
-                        adjustment.status.value, adjustment.adjusted
-                    )
-                    return adjustment
-                else:
-                    raise ValueError("MCP tool returned success but empty data payload.")
-            else:
-                error_msg = tool_response.error or "Unknown error"
-                logger.error("[SCHEDULER] MCP tool failed to evaluate plan: %s", error_msg)
-                raise ValueError(error_msg)
+            return plan_service.evaluate_plan(user_id, commit_weekly_adjustment)
 
         except Exception as e:
             logger.error("[SCHEDULER] Error during plan evaluation: %s", str(e), exc_info=True)

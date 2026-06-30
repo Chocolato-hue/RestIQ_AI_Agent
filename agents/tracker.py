@@ -15,8 +15,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("TrackerAgent")
 
 # Import schemas and client helper
-from schemas import SleepEntrySchema, MCPToolResponseSchema, SleepQuality, MoodOnWake
-from mcp_client import get
+from schemas import SleepEntrySchema, SleepQuality, MoodOnWake
+from services import analyzer as analyzer_service
+from services import storage as storage_service
 
 class TrackerAgent:
     """
@@ -30,15 +31,9 @@ class TrackerAgent:
         """
         logger.info("[TRACKER] Storing entry for user_id '%s' and date '%s'", entry.user_id, entry.date)
         try:
-            response_dict = get("store_sleep_data", {"entry": entry.model_dump(mode="json")})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success:
-                logger.info("[TRACKER] Entry saved successfully.")
-                return True
-            else:
-                logger.error("[TRACKER] Failed to save entry: %s", tool_response.error or "Unknown error")
-                return False
+            storage_service.store_sleep_data(entry)
+            logger.info("[TRACKER] Entry saved successfully.")
+            return True
         except Exception as e:
             logger.error("[TRACKER] Exception occurred while storing entry: %s", str(e), exc_info=True)
             return False
@@ -50,17 +45,9 @@ class TrackerAgent:
         """
         logger.info("[TRACKER] Fetching last %d days for user_id '%s'", days, user_id)
         try:
-            response_dict = get("analyze_patterns", {"user_id": user_id, "days": days})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success and tool_response.data and "entries" in tool_response.data:
-                raw_entries = tool_response.data["entries"]
-                entries = [SleepEntrySchema(**e) for e in raw_entries]
-                logger.info("[TRACKER] Found %d entries.", len(entries))
-                return entries
-            else:
-                logger.warning("[TRACKER] Failed to fetch history or no entries found: %s", tool_response.error or "No data")
-                return []
+            _analysis, entries = analyzer_service.analyze_patterns(user_id, days)
+            logger.info("[TRACKER] Found %d entries.", len(entries))
+            return entries
         except Exception as e:
             logger.error("[TRACKER] Exception occurred while fetching history: %s", str(e), exc_info=True)
             return []

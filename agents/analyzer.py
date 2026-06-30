@@ -18,10 +18,9 @@ logger = logging.getLogger("AnalyzerAgent")
 from schemas import (
     SleepEntrySchema,
     SleepAnalysisSchema,
-    MCPToolResponseSchema,
     VerdictLabel
 )
-from mcp_client import get
+from services import analyzer as analyzer_service
 
 class AnalyzerAgent:
     """
@@ -35,23 +34,9 @@ class AnalyzerAgent:
         """
         logger.info("[ANALYZER] Analyzing last %d days for user_id '%s'", days, user_id)
         try:
-            response_dict = get("analyze_patterns", {"user_id": user_id, "days": days})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success:
-                if tool_response.data and "analysis" in tool_response.data:
-                    analysis_data = tool_response.data["analysis"]
-                    analysis = SleepAnalysisSchema(**analysis_data)
-                    logger.info("[ANALYZER] Analysis complete. Verdict: %s, average score: %s", analysis.verdict.value, analysis.average_score)
-                    return analysis
-                else:
-                    logger.error("[ANALYZER] Success response received but analysis payload is missing.")
-                    raise ValueError("MCP tool returned success but missing 'analysis' data.")
-            else:
-                error_msg = tool_response.error or "Unknown error"
-                logger.error("[ANALYZER] MCP tool failed: %s", error_msg)
-                raise ValueError(error_msg)
-                
+            analysis, _entries = analyzer_service.analyze_patterns(user_id, days)
+            logger.info("[ANALYZER] Analysis complete. Verdict: %s, average score: %s", analysis.verdict.value, analysis.average_score)
+            return analysis
         except Exception as e:
             logger.error("[ANALYZER] Exception occurred during analyze: %s", str(e), exc_info=True)
             raise ValueError(f"Analysis failed: {e}") from e

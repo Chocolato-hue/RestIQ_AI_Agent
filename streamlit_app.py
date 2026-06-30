@@ -10,8 +10,8 @@ the registration + linking UI). Flow:
      Clicking that opens Telegram; bot.py's /start handler calls link_telegram.
   4. After registration the existing Check-in / Report / Plan tabs work as before.
 
-No business logic lives here — every action calls into pipeline.py or directly
-into the mcp_client.get() helper.
+No business logic lives here — every action calls into pipeline.py or
+services/ directly.
 """
 
 import sys, os
@@ -27,7 +27,7 @@ load_dotenv()
 from pipeline import run_checkin, run_weekly_report
 from agents.tracker import run_get_history
 from agents.scheduler import run_evaluate_plan
-from mcp_client import get as mcp_get
+from services import profile as profile_service
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -50,12 +50,8 @@ def _slugify(name: str) -> str:
     return slug or "user"
 
 
-def _call_register(user_id: str, username: str, wake_time: str) -> dict:
-    return mcp_get("register_user", {
-        "user_id": user_id,
-        "username": username,
-        "target_wake_time": wake_time,
-    })
+def _call_register(user_id: str, username: str, wake_time: str):
+    return profile_service.register_user(user_id, username, wake_time)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,14 +110,11 @@ if not user_id:
             wake_str = wake_time.strftime("%H:%M")
             with st.spinner("Setting up your profile..."):
                 try:
-                    result = _call_register(slug, display_name.strip(), wake_str)
-                    if result.get("success"):
-                        st.session_state["user_id"] = slug
-                        st.session_state["just_registered"] = True
-                        st.query_params["user_id"] = slug
-                        st.rerun()
-                    else:
-                        st.error(f"Registration failed: {result.get('error')}")
+                    _call_register(slug, display_name.strip(), wake_str)
+                    st.session_state["user_id"] = slug
+                    st.session_state["just_registered"] = True
+                    st.query_params["user_id"] = slug
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Could not create account: {e}")
     st.stop()

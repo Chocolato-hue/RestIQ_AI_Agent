@@ -8,10 +8,7 @@ that defines a module-level `root_agent`.
 Two tool surfaces are exposed, deliberately:
 
 1. The raw MCP tools from mcp_server.py, via McpToolset connecting over
-   stdio — the same subprocess-based connection mcp_client.py already uses
-   manually. This demonstrates MCP-in-ADK directly and lets you inspect/call
-   individual tools (parse_sleep_input, store_sleep_data, evaluate_plan, etc.)
-   from the ADK Web UI's tool inspector.
+   stdio — thin wrappers around services/ for the ADK Web UI tool inspector.
 
 2. Thin wrapper functions around pipeline.py's deterministic orchestrator
    (run_checkin, run_weekly_report). These exist because the multi-step
@@ -44,7 +41,7 @@ from pipeline import run_checkin as _run_checkin
 from pipeline import run_weekly_report as _run_weekly_report
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tool surface 1: raw MCP tools, via stdio (same approach as mcp_client.py)
+# Tool surface 1: raw MCP tools (thin wrappers over services/)
 # ──────────────────────────────────────────────────────────────────────────────
 
 restiq_mcp_toolset = McpToolset(

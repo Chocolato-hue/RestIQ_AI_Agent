@@ -19,10 +19,9 @@ logger = logging.getLogger("ReporterAgent")
 from schemas import (
     WeeklyReportSchema,
     SleepAnalysisSchema,
-    MCPToolResponseSchema,
     VerdictLabel
 )
-from mcp_client import get
+from services import reporting as reporting_service
 
 class ReporterAgent:
     """
@@ -36,21 +35,9 @@ class ReporterAgent:
         """
         logger.info("[REPORTER] Generating weekly report for user_id '%s'", user_id)
         try:
-            response_dict = get("generate_report", {"user_id": user_id})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success:
-                if tool_response.data:
-                    report = WeeklyReportSchema(**tool_response.data)
-                    logger.info("[REPORTER] Report generated, chart saved at path: %s", report.plotly_chart_path)
-                    return report
-                else:
-                    logger.error("[REPORTER] Success response received but report payload is missing.")
-                    raise ValueError("MCP tool returned success but missing report data.")
-            else:
-                error_msg = tool_response.error or "Unknown error"
-                logger.error("[REPORTER] MCP tool failed: %s", error_msg)
-                raise ValueError(error_msg)
+            report = reporting_service.generate_report(user_id)
+            logger.info("[REPORTER] Report generated, chart saved at path: %s", report.plotly_chart_path)
+            return report
                 
         except Exception as e:
             logger.error("[REPORTER] Exception occurred during report generation: %s", str(e), exc_info=True)

@@ -38,8 +38,7 @@ from schemas import (
     CaffeineSensitivity
 )
 
-# Import scoring helper from mcp_server to ensure correct scoring inside pipeline
-from mcp_server import compute_sleep_score
+from services.scoring import compute_sleep_score
 
 class RestIQPipeline:
     """

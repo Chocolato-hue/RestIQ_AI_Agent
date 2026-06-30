@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("IntakeAgent")
 
 # Import schemas
-from schemas import MCPToolResponseSchema, SleepEntrySchema
-from mcp_client import get
+from schemas import SleepEntrySchema
+from services import intake as intake_service
 
 class IntakeAgent:
     """
@@ -26,22 +26,9 @@ class IntakeAgent:
         logger.info("[INTAKE] Received raw text for user_id '%s': %s", user_id, raw_text)
         
         try:
-            # Call MCP tool parse_sleep_input from mcp_server.py
-            response_dict = get("parse_sleep_input", {"user_id": user_id, "raw_text": raw_text})
-            tool_response = MCPToolResponseSchema(**response_dict)
-            
-            if tool_response.success:
-                logger.info("[INTAKE] Successfully parsed sleep entry.")
-                if tool_response.data:
-                    return SleepEntrySchema(**tool_response.data)
-                else:
-                    logger.error("[INTAKE] Tool response marked success but contains no data payload.")
-                    raise ValueError("MCP tool returned empty data payload.")
-            else:
-                error_msg = tool_response.error or "Unknown error"
-                logger.error("[INTAKE] MCP tool failed to parse sleep input: %s", error_msg)
-                raise ValueError(error_msg)
-                
+            entry = intake_service.parse_sleep_input(user_id, raw_text)
+            logger.info("[INTAKE] Successfully parsed sleep entry.")
+            return entry
         except Exception as e:
             logger.error("[INTAKE] Error during intake processing: %s", str(e), exc_info=True)
             raise ValueError(f"Intake processing failed: {e}") from e
