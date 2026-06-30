@@ -8,7 +8,7 @@ that defines a module-level `root_agent`.
 Two tool surfaces are exposed, deliberately:
 
 1. The raw MCP tools from mcp_server.py, via McpToolset connecting over
-   stdio — thin wrappers around services/ for the ADK Web UI tool inspector.
+   stdio — thin wrappers around tools/ for the ADK Web UI tool inspector.
 
 2. Thin wrapper functions around pipeline.py's deterministic orchestrator
    (run_checkin, run_weekly_report). These exist because the multi-step
@@ -41,7 +41,7 @@ from pipeline import run_checkin as _run_checkin
 from pipeline import run_weekly_report as _run_weekly_report
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tool surface 1: raw MCP tools (thin wrappers over services/)
+# Tool surface 1: raw MCP tools (thin wrappers over tools/)
 # ──────────────────────────────────────────────────────────────────────────────
 
 restiq_mcp_toolset = McpToolset(

@@ -6,9 +6,9 @@ import sqlite3
 
 from schemas import PlanStatus, TelegramLinkSchema, UserProfileSchema
 
-from services.db import DB_FILE
+from db.sqlite import DB_FILE
 
-logger = logging.getLogger("services.profile")
+logger = logging.getLogger("tools.profile")
 
 
 def register_user(

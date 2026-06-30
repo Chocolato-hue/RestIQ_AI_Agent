@@ -7,9 +7,9 @@ import sqlite3
 import plan_engine
 from schemas import PlanAdjustmentSchema
 
-from services.db import DB_FILE
+from db.sqlite import DB_FILE
 
-logger = logging.getLogger("services.plan")
+logger = logging.getLogger("tools.plan")
 
 
 def evaluate_plan(user_id: str, commit_weekly_adjustment: bool = False) -> PlanAdjustmentSchema:

@@ -1,5 +1,9 @@
 # RestIQ Architecture: Services vs MCP (Beginner-Friendly)
 
+> **Note:** This doc describes an intermediate refactor. The current layout uses
+> **`db/`**, **`tools/`**, and **`agents/`** instead of `services/`.
+> See [project-layout-explained.md](./project-layout-explained.md) for the up-to-date structure.
+
 ## The setup in one sentence
 
 RestIQ has **sleep tools** (save data, analyze patterns, generate reports). Those tools now live in **`services/`** as normal Python functions. **`mcp_server.py`** is only a thin wrapper so external tools (like Google ADK) can still talk to RestIQ over MCP.

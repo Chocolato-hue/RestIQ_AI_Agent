@@ -1,4 +1,4 @@
-"""Sleep pattern analysis shared by analyzer and reporter services."""
+"""Sleep pattern analysis shared by analyzer and reporter tools."""
 
 from schemas import SleepAnalysisSchema, SleepEntrySchema, VerdictLabel
 

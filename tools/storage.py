@@ -7,9 +7,9 @@ from datetime import date
 
 from schemas import PlanStatus, SleepEntrySchema
 
-from services.db import DB_FILE
+from db.sqlite import DB_FILE
 
-logger = logging.getLogger("services.storage")
+logger = logging.getLogger("tools.storage")
 
 
 def store_sleep_data(entry: SleepEntrySchema | dict) -> None:

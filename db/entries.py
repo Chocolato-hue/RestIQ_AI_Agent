@@ -5,8 +5,8 @@ from datetime import date
 
 from schemas import SleepEntrySchema
 
-from services.db import DB_FILE
-from services.scoring import compute_sleep_score
+from db.sqlite import DB_FILE
+from tools.scoring import compute_sleep_score
 
 
 def row_to_entry(row: sqlite3.Row) -> SleepEntrySchema:

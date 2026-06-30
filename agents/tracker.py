@@ -16,8 +16,8 @@ logger = logging.getLogger("TrackerAgent")
 
 # Import schemas and client helper
 from schemas import SleepEntrySchema, SleepQuality, MoodOnWake
-from services import analyzer as analyzer_service
-from services import storage as storage_service
+from tools import analyzer as analyzer_tool
+from tools import storage as storage_tool
 
 class TrackerAgent:
     """
@@ -31,7 +31,7 @@ class TrackerAgent:
         """
         logger.info("[TRACKER] Storing entry for user_id '%s' and date '%s'", entry.user_id, entry.date)
         try:
-            storage_service.store_sleep_data(entry)
+            storage_tool.store_sleep_data(entry)
             logger.info("[TRACKER] Entry saved successfully.")
             return True
         except Exception as e:
@@ -45,7 +45,7 @@ class TrackerAgent:
         """
         logger.info("[TRACKER] Fetching last %d days for user_id '%s'", days, user_id)
         try:
-            _analysis, entries = analyzer_service.analyze_patterns(user_id, days)
+            _analysis, entries = analyzer_tool.analyze_patterns(user_id, days)
             logger.info("[TRACKER] Found %d entries.", len(entries))
             return entries
         except Exception as e:

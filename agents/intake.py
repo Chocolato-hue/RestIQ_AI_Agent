@@ -15,7 +15,7 @@ logger = logging.getLogger("IntakeAgent")
 
 # Import schemas
 from schemas import SleepEntrySchema
-from services import intake as intake_service
+from tools import intake as intake_tool
 
 class IntakeAgent:
     """
@@ -26,7 +26,7 @@ class IntakeAgent:
         logger.info("[INTAKE] Received raw text for user_id '%s': %s", user_id, raw_text)
         
         try:
-            entry = intake_service.parse_sleep_input(user_id, raw_text)
+            entry = intake_tool.parse_sleep_input(user_id, raw_text)
             logger.info("[INTAKE] Successfully parsed sleep entry.")
             return entry
         except Exception as e:

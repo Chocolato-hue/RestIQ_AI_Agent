@@ -1,10 +1,11 @@
 """
 mcp_server.py — Thin MCP transport layer for RestIQ
 
-All business logic lives in services/. This file only registers those
-functions as MCP tools for external clients (Google ADK Web UI, etc.).
+Tool implementations live in tools/; database setup in db/.
+This file only registers tools as MCP endpoints for external clients
+(Google ADK Web UI, etc.).
 
-The main app (agents, Streamlit, Telegram bot) calls services/ directly.
+The main app (agents, Streamlit, Telegram bot) calls tools/ directly.
 """
 
 import logging
@@ -21,9 +22,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("mcp_server")
 
-import services  # noqa: E402, F401 — ensures DB init
+import db  # noqa: E402, F401 — ensures DB init
 
-from services import (  # noqa: E402
+from tools import (  # noqa: E402
     analyzer,
     circadian,
     intake,
@@ -33,7 +34,6 @@ from services import (  # noqa: E402
     reporting,
     storage,
 )
-from services.scoring import compute_sleep_score  # noqa: E402 — re-export for pipeline
 
 mcp = FastMCP("restiq-sleep-server")
 

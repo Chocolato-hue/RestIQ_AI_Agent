@@ -7,12 +7,12 @@ import sqlite3
 
 from schemas import WeeklyReportSchema
 
-from services.analysis import build_sleep_analysis
-from services.db import DB_FILE
-from services.entries import ensure_entry_scores, row_to_entry
-from services.scoring import compute_sleep_score
+from tools.analysis import build_sleep_analysis
+from db.sqlite import DB_FILE
+from db.entries import ensure_entry_scores, row_to_entry
+from tools.scoring import compute_sleep_score
 
-logger = logging.getLogger("services.reporting")
+logger = logging.getLogger("tools.reporting")
 
 
 def generate_report(user_id: str) -> WeeklyReportSchema:

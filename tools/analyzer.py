@@ -5,11 +5,11 @@ import sqlite3
 
 from schemas import SleepAnalysisSchema, SleepEntrySchema
 
-from services.analysis import build_sleep_analysis
-from services.db import DB_FILE
-from services.entries import fetch_recent_entries
+from tools.analysis import build_sleep_analysis
+from db.sqlite import DB_FILE
+from db.entries import fetch_recent_entries
 
-logger = logging.getLogger("services.analyzer")
+logger = logging.getLogger("tools.analyzer")
 
 
 def analyze_patterns(user_id: str, days: int = 7) -> tuple[SleepAnalysisSchema, list[SleepEntrySchema]]:

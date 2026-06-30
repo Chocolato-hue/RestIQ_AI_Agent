@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 
 from schemas import MoodOnWake, SleepEntrySchema, SleepQuality
 
-from services.scoring import calculate_duration
+from tools.scoring import calculate_duration
 
-logger = logging.getLogger("services.intake")
+logger = logging.getLogger("tools.intake")
 
 
 class SleepExtractionSchema(BaseModel):

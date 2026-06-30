@@ -21,7 +21,7 @@ from schemas import (
     SleepAnalysisSchema,
     VerdictLabel
 )
-from services import reporting as reporting_service
+from tools import reporting as reporting_tool
 
 class ReporterAgent:
     """
@@ -35,7 +35,7 @@ class ReporterAgent:
         """
         logger.info("[REPORTER] Generating weekly report for user_id '%s'", user_id)
         try:
-            report = reporting_service.generate_report(user_id)
+            report = reporting_tool.generate_report(user_id)
             logger.info("[REPORTER] Report generated, chart saved at path: %s", report.plotly_chart_path)
             return report
                 

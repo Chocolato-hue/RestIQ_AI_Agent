@@ -38,7 +38,7 @@ from schemas import (
     CaffeineSensitivity
 )
 
-from services.scoring import compute_sleep_score
+from tools.scoring import compute_sleep_score
 
 class RestIQPipeline:
     """

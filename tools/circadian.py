@@ -4,7 +4,7 @@ import logging
 
 from schemas import CircadianSchema
 
-logger = logging.getLogger("services.circadian")
+logger = logging.getLogger("tools.circadian")
 
 
 def calculate_circadian(wake_time: str, sleep_duration: float = 8.0) -> CircadianSchema:

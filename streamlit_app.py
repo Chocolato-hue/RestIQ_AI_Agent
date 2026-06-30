@@ -11,7 +11,7 @@ the registration + linking UI). Flow:
   4. After registration the existing Check-in / Report / Plan tabs work as before.
 
 No business logic lives here — every action calls into pipeline.py or
-services/ directly.
+tools/ directly.
 """
 
 import sys, os
@@ -27,7 +27,7 @@ load_dotenv()
 from pipeline import run_checkin, run_weekly_report
 from agents.tracker import run_get_history
 from agents.scheduler import run_evaluate_plan
-from services import profile as profile_service
+from tools import profile as profile_tool
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -51,7 +51,7 @@ def _slugify(name: str) -> str:
 
 
 def _call_register(user_id: str, username: str, wake_time: str):
-    return profile_service.register_user(user_id, username, wake_time)
+    return profile_tool.register_user(user_id, username, wake_time)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

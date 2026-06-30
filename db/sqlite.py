@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 
-logger = logging.getLogger("services.db")
+logger = logging.getLogger("db.sqlite")
 
 DB_FILE = "sleep_data.db"
 

@@ -156,7 +156,9 @@ restiq/
 │   └── agent.py
 │
 ├── pipeline.py
-├── services/              # Business logic (DB, scoring, intake, reports)
+├── db/                    # SQLite schema + entry access
+├── tools/                 # Tool implementations (parse, store, analyze, …)
+├── agents/                # Agent orchestration (calls tools/)
 ├── mcp_server.py          # Thin MCP wrapper for ADK / external clients
 ├── plan_engine.py
 ├── schemas.py

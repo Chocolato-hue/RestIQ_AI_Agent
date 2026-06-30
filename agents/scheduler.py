@@ -24,8 +24,8 @@ from schemas import (
     SleepQuality,
     MoodOnWake
 )
-from services import circadian as circadian_service
-from services import plan as plan_service
+from tools import circadian as circadian_tool
+from tools import plan as plan_tool
 
 class SchedulerAgent:
     """
@@ -39,7 +39,7 @@ class SchedulerAgent:
         """
         logger.info("[SCHEDULER] Calculating circadian recommendations for wake_time='%s', duration=%s", wake_time, sleep_duration)
         try:
-            return circadian_service.calculate_circadian(wake_time, sleep_duration)
+            return circadian_tool.calculate_circadian(wake_time, sleep_duration)
                 
         except Exception as e:
             logger.error("[SCHEDULER] Error during circadian calculation: %s", str(e), exc_info=True)
@@ -65,7 +65,7 @@ class SchedulerAgent:
             user_id, commit_weekly_adjustment
         )
         try:
-            return plan_service.evaluate_plan(user_id, commit_weekly_adjustment)
+            return plan_tool.evaluate_plan(user_id, commit_weekly_adjustment)
 
         except Exception as e:
             logger.error("[SCHEDULER] Error during plan evaluation: %s", str(e), exc_info=True)

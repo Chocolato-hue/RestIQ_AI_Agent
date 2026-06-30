@@ -27,11 +27,11 @@ from agents.tracker import run_get_latest
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-from services import profile as profile_service
+from tools import profile as profile_tool
 
 
 def _call_link_telegram(user_id: str, telegram_chat_id: str):
-    return profile_service.link_telegram(user_id, telegram_chat_id)
+    return profile_tool.link_telegram(user_id, telegram_chat_id)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ from schemas import (
     SleepAnalysisSchema,
     VerdictLabel
 )
-from services import analyzer as analyzer_service
+from tools import analyzer as analyzer_tool
 
 class AnalyzerAgent:
     """
@@ -34,7 +34,7 @@ class AnalyzerAgent:
         """
         logger.info("[ANALYZER] Analyzing last %d days for user_id '%s'", days, user_id)
         try:
-            analysis, _entries = analyzer_service.analyze_patterns(user_id, days)
+            analysis, _entries = analyzer_tool.analyze_patterns(user_id, days)
             logger.info("[ANALYZER] Analysis complete. Verdict: %s, average score: %s", analysis.verdict.value, analysis.average_score)
             return analysis
         except Exception as e:
