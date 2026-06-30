@@ -164,7 +164,8 @@ restiq/
 ├── bot.py
 ├── logger_config.py
 ├── sleep_data.db
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
 └── README.md
 ```
 
@@ -180,29 +181,27 @@ git clone https://github.com/yourusername/restiq.git
 cd restiq
 ```
 
-## Create Virtual Environment
-
-Windows
+## Install [uv](https://docs.astral.sh/uv/)
 
 ```bash
-python -m venv venv
-
-venv\Scripts\activate
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Mac/Linux
+Windows (PowerShell):
 
-```bash
-python -m venv venv
-
-source venv/bin/activate
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 ## Install Dependencies
 
+From the project root:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+This creates a `.venv` virtual environment and installs locked dependencies from `uv.lock`.
 
 ## Configure Environment
 
@@ -225,25 +224,25 @@ TELEGRAM_BOT_USERNAME=YOUR_BOT
 Start Streamlit
 
 ```bash
-streamlit run streamlit_app.py
+uv run streamlit run streamlit_app.py
 ```
 
 Start Telegram Bot
 
 ```bash
-python bot.py
+uv run python bot.py
 ```
 
 Run Agent Development UI
 
 ```bash
-adk web restiq_agent
+uv run adk web restiq_agent
 ```
 
 Run Full Pipeline
 
 ```bash
-python pipeline.py
+uv run python pipeline.py
 ```
 
 ---
