@@ -207,17 +207,22 @@ This creates a `.venv` virtual environment and installs locked dependencies from
 
 ## Configure Environment
 
-Create a `.env`
+Copy the example file and add your keys:
 
-```env
-GOOGLE_API_KEY=YOUR_API_KEY
-
-GEMINI_MODEL=gemini-2.5-flash
-
-TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
-
-TELEGRAM_BOT_USERNAME=YOUR_BOT
+```bash
+cp .env.example .env
 ```
+
+Edit `.env` with your values. See `.env.example` for what each variable does.
+
+| Variable | Required for | Notes |
+|----------|--------------|-------|
+| `GOOGLE_API_KEY` | Check-ins, ADK agent | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `GEMINI_MODEL` | Optional | Defaults to `gemini-2.5-flash` |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot | From [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_BOT_USERNAME` | Streamlit Telegram link | Bot username without `@` |
+
+Streamlit and the pipeline only need `GOOGLE_API_KEY`. The Telegram bot needs all four.
 
 ---
 
