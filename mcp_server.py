@@ -394,22 +394,29 @@ def parse_sleep_input(user_id: str, raw_text: str) -> dict:
         system_instruction = (
             "You are an expert sleep data extraction assistant.\n"
             "Analyze the user's natural language check-in text and extract structured sleep information.\n"
-            "Strictly extract all required fields into the requested JSON schema.\n"
+            "Strictly extract all required fields and return ONLY a valid JSON object matching the following structure.\n"
+            "Do NOT wrap the response in markdown code blocks. The response must be pure JSON.\n"
+            "{\n"
+            "  \"bedtime\": \"HH:MM\",\n"
+            "  \"wake_time\": \"HH:MM\",\n"
+            "  \"wake_up_count\": 0,\n"
+            "  \"sleep_quality\": \"GOOD\",\n"
+            "  \"mood_on_wake\": \"OKAY\",\n"
+            "  \"caffeine_after_2pm\": false,\n"
+            "  \"exercise_today\": false,\n"
+            "  \"screen_time_before_bed\": false,\n"
+            "  \"focus_level\": 3,\n"
+            "  \"energy_level\": 3,\n"
+            "  \"notes\": null\n"
+            "}\n"
             "If any value is not explicitly mentioned, estimate it reasonably based on context or use standard sensible defaults:\n"
-            "- bedtime: HH:MM format (24-hour clock)\n"
-            "- wake_time: HH:MM format (24-hour clock)\n"
+            "- bedtime & wake_time: HH:MM format (24-hour clock)\n"
             "- wake_up_count: integer (0-10)\n"
             "- sleep_quality: POOR, FAIR, GOOD, or EXCELLENT\n"
             "- mood_on_wake: TERRIBLE, TIRED, OKAY, GOOD, or GREAT\n"
-            "- caffeine_after_2pm: boolean (true/false)\n"
-            "- exercise_today: boolean (true/false)\n"
-            "- screen_time_before_bed: boolean (true/false)\n"
-            "- focus_level: integer 1-5. Only infer this from explicit statements about concentration, "
-            "distraction, or mental clarity (e.g. 'couldn't focus' -> low, 'sharp all day' -> high). "
-            "If the user says nothing relevant to focus, use 3 (neutral) rather than guessing.\n"
-            "- energy_level: integer 1-5. Only infer this from explicit statements about tiredness, "
-            "fatigue, or energy (e.g. 'exhausted', 'felt sluggish' -> low, 'felt great, lots of energy' -> high). "
-            "If the user says nothing relevant to energy, use 3 (neutral) rather than guessing.\n"
+            "- caffeine_after_2pm, exercise_today, screen_time_before_bed: boolean\n"
+            "- focus_level: integer 1-5. Only infer from explicit statements about concentration. If none, use 3.\n"
+            "- energy_level: integer 1-5. Only infer from explicit statements about tiredness. If none, use 3.\n"
             "- notes: str or null"
         )
         
@@ -426,14 +433,15 @@ def parse_sleep_input(user_id: str, raw_text: str) -> dict:
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
-                response_schema=SleepExtractionSchema,
                 temperature=0.0,
             )
         )
         
-        extracted = response.parsed
-        if not extracted:
-            raise ValueError(f"Failed to parse structured output from Gemini. Raw text: {response.text}")
+        try:
+            parsed_json = json.loads(response.text)
+            extracted = SleepExtractionSchema(**parsed_json)
+        except Exception as e:
+            raise ValueError(f"Failed to parse structured output from Gemini. Error: {e}. Raw text: {response.text}")
             
         duration = calculate_duration(extracted.bedtime, extracted.wake_time)
         

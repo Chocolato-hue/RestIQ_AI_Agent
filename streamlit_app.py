@@ -165,40 +165,130 @@ tab_checkin, tab_report, tab_plan = st.tabs(["Check-in", "Weekly Report", "Plan 
 with tab_checkin:
     st.write("")
     st.markdown("### 📝 Daily Check-in")
+    st.caption("Share how you slept last night. RestIQ will analyze your habits and help improve tomorrow's sleep.")
+
     with st.container(border=True):
+        st.markdown("#### What to include")
+        c1, c2 = st.columns(2)
+
+        with c1:
+            st.write("• Bedtime and wake-up time")
+            st.write("• Number of wake-ups")
+            st.write("• Sleep quality and mood")
+
+        with c2:
+            st.write("• Caffeine after 2 PM")
+            st.write("• Exercise")
+            st.write("• Screen time before bed")
+
+        example_text = (
+            "Went to bed at 11pm, woke up at 7am, woke up once, slept okay, "
+            "felt a bit tired, no caffeine after 2, exercised for 20 minutes, "
+            "and used my phone before bed."
+        )
+
         raw_text = st.text_area(
             "Tell me about last night",
-            placeholder=(
-                "Went to bed at 11pm, woke up at 7am, woke up once, slept okay, "
-                "felt a bit tired, no caffeine after 2, didn't exercise, used my phone before bed."
-            ),
-            height=120,
+            placeholder=example_text,
+            height=140,
         )
-        st.write("")
+
         if st.button("Submit check-in", type="primary", use_container_width=True):
             if not raw_text.strip():
-                st.warning("Type something about last night's sleep first.")
+                st.warning("Please describe your sleep before submitting.")
             else:
                 with st.spinner("Analyzing your sleep..."):
                     try:
                         result = run_checkin(user_id, raw_text)
+                        entry = result["entry"]
+                        circadian = result["circadian"]
+                        reply_text = result["reply_message"]
+
+                        biggest_issue = "Maintain consistency"
+                        tonight_goal = "Keep your bedtime and wake-up time consistent"
+                        why_it_matters = "A consistent routine helps your body predict when to sleep and wake."
+
+                        if entry.screen_time_before_bed:
+                            biggest_issue = "📱 Screen time before bed"
+                            tonight_goal = "Stop screens at least 60 minutes before bed"
+                            why_it_matters = "Screen light can delay melatonin release, making it harder to fall asleep."
+
+                        if entry.caffeine_after_2pm:
+                            biggest_issue = "☕ Late caffeine intake"
+                            tonight_goal = "Avoid caffeine after 2 PM"
+                            why_it_matters = "Caffeine can stay active for hours and reduce sleep quality."
+
+                        if entry.sleep_duration < 7:
+                            biggest_issue = "⏳ Short sleep duration"
+                            tonight_goal = "Go to bed 20–30 minutes earlier tonight"
+                            why_it_matters = "Sleeping less than 7 hours can increase tiredness and reduce focus the next day."
+
+                        if entry.wake_up_count > 1:
+                            biggest_issue = "🔔 Frequent wake-ups"
+                            tonight_goal = "Create a calmer wind-down routine before bed"
+                            why_it_matters = "Night interruptions reduce deep sleep and can make you feel tired in the morning."
+
+                        score = entry.score
+
+                        if score >= 90:
+                            score_label = "🟢 Excellent"
+                        elif score >= 75:
+                            score_label = "🟢 Great"
+                        elif score >= 60:
+                            score_label = "🟡 Good"
+                        elif score >= 40:
+                            score_label = "🟠 Fair"
+                        else:
+                            score_label = "🔴 Poor"
+
                         st.write("")
                         with st.container(border=True):
-                            st.success("✅ **Logged successfully!**")
-                            entry = result["entry"]
+                            st.success("✅ Sleep logged successfully!")
+
                             col1, col2, col3 = st.columns(3)
-                            col1.metric("Sleep score", f"{entry.score}/100")
-                            col2.metric("Duration", f"{entry.sleep_duration}h")
-                            col3.metric("Tonight's bedtime", result["circadian"].recommended_bedtime)
+                            col1.metric("⭐ Sleep Score", f"{score}/100", score_label)
+                            col2.metric("🛌 Duration", f"{entry.sleep_duration}h")
+                            col3.metric("⏰ Tonight's Bedtime", circadian.recommended_bedtime)
+
                             st.divider()
+
+                            if score >= 90:
+                                st.success("🟢 **Excellent Night!**\n\nYou had an excellent night's sleep. Keep following this routine.")
+                            elif score >= 75:
+                                st.success("🟢 **Great Sleep!**\n\nYou're building healthy sleep habits. Keep up the consistency.")
+                            elif score >= 60:
+                                st.warning("🟡 **Good Progress**\n\nYour sleep is improving, but there are still a few habits worth refining.")
+                            elif score >= 40:
+                                st.warning("🟠 **Needs Improvement**\n\nToday's sleep quality wasn't ideal. Focus on tonight's recommendations.")
+                            else:
+                                st.error("🔴 **Poor Sleep Night**\n\nYour sleep was significantly affected. Let's improve it tonight.")
+
+                            st.write("")
+                            st.markdown("### 🧠 RestIQ's Analysis")
+
+                            issue_col, goal_col = st.columns(2)
+                            with issue_col:
+                                st.error(f"**🚨 Biggest Issue**\n\n{biggest_issue}")
+                            with goal_col:
+                                st.success(f"**🎯 Tonight's Goal**\n\n{tonight_goal}")
+
+                            st.info(f"**💡 Why it matters**\n\n{why_it_matters}")
+
                             if result["plan_adjustment"].adjusted:
                                 st.info(f"📋 **Plan update:** {result['plan_adjustment'].reason}")
-                            st.write(f"💬 {result['reply_message']}")
-                    except Exception as e:
-                        st.error(f"Couldn't process that check-in: {e}")
+
+                            with st.expander("🧠 How RestIQ analyzed your sleep"):
+                                st.write(reply_text)
+
+                    except Exception:
+                        st.error("Couldn't process your check-in right now.")
+                        st.info(
+                            "The AI service may be temporarily unavailable. "
+                            "Please try again later or refresh the API key if needed."
+                        )
+                        st.caption("Technical details are available in the terminal logs.")
 
 # ── Tab 2: Weekly Report ─────────────────────────────────────────────────────
-
 with tab_report:
     st.write("")
     st.markdown("### 📈 Weekly Report")
@@ -206,7 +296,7 @@ with tab_report:
         st.write("Generate your comprehensive weekly sleep analysis.")
         st.write("")
         btn_generate = st.button("Generate weekly report", type="primary", use_container_width=True)
-        
+
     if btn_generate:
         with st.spinner("Generating report..."):
             try:
@@ -232,7 +322,6 @@ with tab_report:
                 st.write("")
                 st.divider()
 
-                # --- SECTION: HEALTH SCORE ---
                 st.markdown("## 🩺 Sleep Health Score")
                 with st.container(border=True):
                     if verdict_val == "EXCELLENT":
@@ -250,7 +339,6 @@ with tab_report:
 
                 st.write("")
 
-                # --- SECTION: SUMMARY METRICS ---
                 st.markdown("## 🎯 Weekly Summary")
                 with st.container(border=True):
                     status_col, focus_col = st.columns(2)
@@ -283,7 +371,7 @@ with tab_report:
                         with st.container(border=True):
                             st.metric("🔥 Streak", f"{analysis.streak_days} days")
 
-                    st.write("") # Spacing
+                    st.write("")
 
                     if analysis.best_night and analysis.worst_night:
                         if history_count < 2 or analysis.best_night.date == analysis.worst_night.date:
@@ -305,15 +393,17 @@ with tab_report:
 
                 st.write("")
 
-                # --- SECTION: TRENDS ---
                 st.markdown("## 📈 Sleep Trends")
                 with st.container(border=True):
                     if history:
                         history_sorted = sorted(history, key=lambda e: e.date)
                         fig = go.Figure()
-                        
-                        x_days = [__import__('datetime').datetime.strptime(str(e.date), "%Y-%m-%d").strftime("%a") for e in history_sorted]
-                        
+
+                        x_days = [
+                            __import__("datetime").datetime.strptime(str(e.date), "%Y-%m-%d").strftime("%a")
+                            for e in history_sorted
+                        ]
+
                         fig.add_trace(go.Scatter(
                             x=x_days,
                             y=[e.score for e in history_sorted],
@@ -334,54 +424,101 @@ with tab_report:
 
                 st.write("")
 
-                # --- SECTION: INSIGHTS ---
-                st.markdown("## 🧠 Insights & Patterns")
+                st.markdown("## 🧠 Weekly Insights")
                 with st.container(border=True):
-                    if not analysis.patterns_detected:
-                        st.info("No significant patterns detected this week.")
-                    else:
-                        for p in analysis.patterns_detected:
-                            text_lower = p.lower()
-                            if "exercise" in text_lower or "improved" in text_lower or "better" in text_lower:
-                                st.success(f"✅ {p}")
-                            elif "caffeine" in text_lower or "coffee" in text_lower:
-                                st.warning(f"☕ {p}")
-                            elif "screen time" in text_lower or "phone" in text_lower or "screen" in text_lower:
-                                st.warning(f"⚠️ {p}")
-                            elif "consistent" in text_lower or "schedule" in text_lower:
-                                st.info(f"🌙 {p}")
-                            elif "reduced" in text_lower or "affected" in text_lower or "poor" in text_lower or "late" in text_lower:
-                                st.warning(f"⚠️ {p}")
-                            else:
-                                st.info(f"💡 {p}")
+                    st.caption("RestIQ found the most important patterns from this week's sleep data.")
 
-                st.write("")
+                    insight_count = 0
 
-                # --- SECTION: ACTION PLAN ---
-                st.markdown("## 📋 Action Plan")
-                st.write("")
-                st.markdown("#### Priority Recommendations")
-                for idx, r in enumerate(analysis.recommendations, start=1):
-                    parts = r.split(":", 1)
-                    if len(parts) > 1:
-                        title = parts[0].strip()
-                        explanation = parts[1].strip()
-                    else:
-                        # Fallback if there is no colon
-                        sentence_parts = r.split(". ", 1)
-                        if len(sentence_parts) > 1:
-                            title = sentence_parts[0].strip() + "."
-                            explanation = sentence_parts[1].strip()
+                    if analysis.average_duration < 7:
+                        st.warning(
+                            f"⚠️ Your average sleep duration is {analysis.average_duration}h, "
+                            "which is below the recommended 7–9 hour range."
+                        )
+                        insight_count += 1
+                    elif 7 <= analysis.average_duration <= 9:
+                        st.success(
+                            f"✅ Your average sleep duration is {analysis.average_duration}h, "
+                            "which is within the healthy sleep range."
+                        )
+                        insight_count += 1
+
+                    if analysis.average_wake_ups > 1:
+                        st.warning(
+                            f"🔔 You woke up about {analysis.average_wake_ups} times per night on average. "
+                            "Reducing interruptions could improve sleep quality."
+                        )
+                        insight_count += 1
+
+                    for p in analysis.patterns_detected:
+                        text_lower = p.lower()
+                        if "exercise" in text_lower or "improved" in text_lower or "better" in text_lower:
+                            st.success(f"✅ {p}")
+                        elif "caffeine" in text_lower or "coffee" in text_lower:
+                            st.warning(f"☕ {p}")
+                        elif "screen time" in text_lower or "phone" in text_lower or "screen" in text_lower:
+                            st.warning(f"📱 {p}")
+                        elif "consistent" in text_lower or "schedule" in text_lower:
+                            st.info(f"🌙 {p}")
+                        elif "reduced" in text_lower or "affected" in text_lower or "poor" in text_lower or "late" in text_lower:
+                            st.warning(f"⚠️ {p}")
                         else:
-                            title = "Action Item"
-                            explanation = r.strip()
+                            st.info(f"💡 {p}")
+                        insight_count += 1
 
-                    with st.container(border=True):
-                        st.markdown(f"**🎯 Priority {idx} | {title}**")
-                        st.write(explanation)
+                    if insight_count == 0:
+                        st.info("Not enough patterns detected yet. Keep logging daily to unlock better insights.")
 
                 st.write("")
-                st.markdown("#### Next Week Focus")
+
+                st.markdown("## 📋 Personalized Action Plan")
+                with st.container(border=True):
+                    st.caption("Focus on the highest-impact changes for the next 7 days.")
+
+                    priority_items = []
+
+                    if analysis.average_duration < 7:
+                        priority_items.append((
+                            "Increase sleep duration",
+                            "Try going to bed 20–30 minutes earlier until your average sleep reaches at least 7 hours."
+                        ))
+
+                    if analysis.average_wake_ups > 1:
+                        priority_items.append((
+                            "Reduce night interruptions",
+                            "Keep your room cool, avoid late fluids, and reduce screen time before bed."
+                        ))
+
+                    if analysis.caffeine_impact and "drop" in analysis.caffeine_impact.lower():
+                        priority_items.append((
+                            "Cut late caffeine",
+                            "Avoid caffeine after 2 PM to reduce sleep disruption."
+                        ))
+
+                    if analysis.screen_time_impact and "drop" in analysis.screen_time_impact.lower():
+                        priority_items.append((
+                            "Protect your wind-down time",
+                            "Keep screens away for 30–60 minutes before bedtime."
+                        ))
+
+                    for r in analysis.recommendations:
+                        if len(priority_items) >= 3:
+                            break
+                        priority_items.append(("Recommendation", r))
+
+                    if not priority_items:
+                        priority_items.append((
+                            "Maintain consistency",
+                            "Keep your bedtime and wake-up time steady this week."
+                        ))
+
+                    for idx, (title, explanation) in enumerate(priority_items[:3], start=1):
+                        with st.container(border=True):
+                            st.markdown(f"**🎯 Priority {idx}: {title}**")
+                            st.write(explanation)
+
+                st.write("")
+                st.markdown("## 🎯 Next Week Focus")
                 st.success(report.next_week_goal)
 
                 if report.milestone_message:
