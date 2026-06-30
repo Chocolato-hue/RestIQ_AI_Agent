@@ -27,10 +27,11 @@ from agents.tracker import run_get_latest
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _call_link_telegram(user_id: str, telegram_chat_id: str) -> dict:
-    """Synchronous wrapper: calls the link_telegram MCP tool via mcp_client."""
-    from mcp_client import get
-    return get("link_telegram", {"user_id": user_id, "telegram_chat_id": telegram_chat_id})
+from tools import profile as profile_tool
+
+
+def _call_link_telegram(user_id: str, telegram_chat_id: str):
+    return profile_tool.link_telegram(user_id, telegram_chat_id)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -60,31 +61,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             telegram_chat_id, deep_link_payload
         )
         try:
-            result = await asyncio.to_thread(
+            link = await asyncio.to_thread(
                 _call_link_telegram, deep_link_payload, telegram_chat_id
             )
-            if result.get("success"):
-                link_data = result.get("data", {})
-                already = link_data.get("already_linked", False)
-                if already:
-                    msg = (
-                        f"✅ Your Telegram is already linked to account *{deep_link_payload}*.\n\n"
-                        "You'll continue receiving daily check-ins and weekly reports here. 🌙"
-                    )
-                else:
-                    msg = (
-                        f"✅ *Telegram linked successfully!*\n\n"
-                        f"Your RestIQ account `{deep_link_payload}` will now send daily check-ins "
-                        f"and weekly reports to this chat.\n\n"
-                        "Use /checkin to log your first sleep, or wait for my morning message!"
-                    )
-            else:
-                error = result.get("error", "Unknown error")
-                logger.error("[BOT] link_telegram failed: %s", error)
+            if link.already_linked:
                 msg = (
-                    f"⚠️ Couldn't link your account: `{error}`\n\n"
-                    "Make sure you registered on the web dashboard first, "
-                    "then click 'Connect Telegram' again."
+                    f"✅ Your Telegram is already linked to account *{deep_link_payload}*.\n\n"
+                    "You'll continue receiving daily check-ins and weekly reports here. 🌙"
+                )
+            else:
+                msg = (
+                    f"✅ *Telegram linked successfully!*\n\n"
+                    f"Your RestIQ account `{deep_link_payload}` will now send daily check-ins "
+                    f"and weekly reports to this chat.\n\n"
+                    "Use /checkin to log your first sleep, or wait for my morning message!"
                 )
             await update.message.reply_text(msg, parse_mode="Markdown")
         except Exception as e:
