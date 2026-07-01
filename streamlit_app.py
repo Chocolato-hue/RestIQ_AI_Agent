@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from pipeline import run_checkin, run_weekly_report
-from agents.tracker import run_get_history
+from agents.tracker import run_get_history, run_get_latest
 from agents.scheduler import run_evaluate_plan
 from tools import profile as profile_tool
 
@@ -206,6 +206,23 @@ with tab_checkin:
         unsafe_allow_html=True,
     )
 
+    latest_entry = run_get_latest(user_id)
+    memory_message = None
+
+    if latest_entry:
+        if latest_entry.screen_time_before_bed:
+            memory_message = "📱 Yesterday's focus was reducing screen time before bed."
+        elif latest_entry.caffeine_after_2pm:
+            memory_message = "☕ Yesterday's focus was avoiding caffeine after 2 PM."
+        elif latest_entry.wake_up_count > 1:
+            memory_message = "🌙 Yesterday you woke up multiple times during the night."
+        elif latest_entry.sleep_duration < 7:
+            memory_message = "😴 Yesterday's goal was getting more than 7 hours of sleep."
+        elif latest_entry.score and latest_entry.score >= 85:
+            memory_message = "🎉 Yesterday you had a great sleep score. Let's keep the streak going!"
+        else:
+            memory_message = "🌙 Welcome back! Let's see how you slept last night."
+
     if "checkin_answers" not in st.session_state:
         st.session_state.checkin_answers = {}
     if "checkin_current_key" not in st.session_state:
@@ -262,7 +279,7 @@ with tab_checkin:
         return "done"
 
     question_text = {
-        "sleep_feeling": "Good morning 😊 How did you sleep last night?",
+        "sleep_feeling": "How did you sleep last night?",
         "sleep_problem": "Sorry to hear that. What do you think affected your sleep the most?",
         "bed_wake": "What time did you go to bed and wake up?",
         "wakeups": "Did you wake up during the night? If yes, how many times?",
@@ -284,7 +301,14 @@ with tab_checkin:
     st.session_state.checkin_current_key = current_key
 
     if current_key != "done":
-        _chat_bubble("RestIQ", question_text[current_key], is_user=False)
+        if current_key == "sleep_feeling" and memory_message:
+            _chat_bubble(
+                "RestIQ",
+                f"Good morning 😊<br><br>{memory_message}<br><br>{question_text[current_key]}",
+                is_user=False,
+            )
+        else:
+            _chat_bubble("RestIQ", question_text[current_key], is_user=False)
     else:
         _chat_bubble("RestIQ", "✅ I have enough information to analyze your sleep.", is_user=False)
 
