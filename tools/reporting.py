@@ -59,34 +59,61 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
     import plotly.graph_objects as go
     import plotly.io as pio
 
+    day_labels = []
+    for d in dates:
+        try:
+            day_labels.append(datetime.datetime.strptime(d, "%Y-%m-%d").strftime("%a"))
+        except Exception:
+            day_labels.append(str(d))
+
     colors = []
     for s in scores:
         if s < 50:
-            colors.append("#FF4B4B")
+            colors.append("#EF4444")
         elif s <= 75:
-            colors.append("#FFAA00")
+            colors.append("#F59E0B")
         else:
-            colors.append("#00CC88")
+            colors.append("#10B981")
 
     fig = go.Figure(
         data=[
             go.Bar(
-                x=dates,
+                x=day_labels,
                 y=scores,
                 marker_color=colors,
-                text=scores,
-                textposition="auto",
+                text=[f"{s}/100" for s in scores],
+                textposition="outside",
+                hovertemplate="<b>%{x}</b><br>Sleep Score: %{y}/100<extra></extra>",
             )
-        ]
+        ]    
     )
+
     fig.update_layout(
-        title="Weekly Sleep Scores",
-        xaxis_title="Date",
-        yaxis_title="Sleep Score",
-        yaxis=dict(range=[0, 100]),
-        template="plotly_dark",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        title={
+            "text": "Weekly Sleep Score",
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        xaxis_title="Day",
+        yaxis_title="Score",
+        yaxis=dict(range=[0, 105]),
+        width=900,
+        height=520,
+        margin=dict(l=70, r=40, t=80, b=70),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(size=18, color="#111827"),
+        showlegend=False,
+    )
+
+    fig.update_xaxes(
+        tickfont=dict(size=18),
+        showgrid=False,
+    )
+
+    fig.update_yaxes(
+        tickfont=dict(size=16),
+        gridcolor="#E5E7EB",
     )
 
     chart_path = f"/tmp/restiq_report_{user_id}.png"
