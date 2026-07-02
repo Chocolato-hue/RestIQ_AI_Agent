@@ -394,6 +394,16 @@ def format_coaching_message(coaching: CoachingResult) -> str:
     """
     Formats CoachingResult into a readable Telegram/Streamlit message.
     """
+    return format_coaching_message_conversational(coaching)
+
+
+def format_coaching_message_conversational(
+    coaching: CoachingResult,
+    user_context: str = "",
+) -> str:
+    """
+    Formats CoachingResult with a warmer, conversation-aware tone.
+    """
     debt_emoji = {
         "NONE": "🟢",
         "MILD": "🟡",
@@ -403,16 +413,21 @@ def format_coaching_message(coaching: CoachingResult) -> str:
 
     tips_text = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(coaching.personalized_tips))
 
+    opener = ""
+    if user_context.strip():
+        opener = f"{user_context.strip()}\n\n"
+
     return (
-        f"🧠 *What's actually affecting your sleep:*\n"
+        f"{opener}"
+        f"🧠 *What's affecting your sleep:*\n"
         f"{coaching.primary_insight}\n\n"
-        f"🕐 *Tonight's science-backed schedule:*\n"
-        f"  • Last caffeine: {coaching.caffeine_cutoff} (5.5h half-life rule)\n"
-        f"  • Screen cutoff: {coaching.screen_cutoff} (melatonin protection)\n"
-        f"  • Wind down: {coaching.wind_down_start} (dim lights, no work)\n"
+        f"🕐 *Tonight's schedule:*\n"
+        f"  • Last caffeine: {coaching.caffeine_cutoff}\n"
+        f"  • Screen cutoff: {coaching.screen_cutoff}\n"
+        f"  • Wind down: {coaching.wind_down_start}\n"
         f"  • Lights out: {coaching.recommended_bedtime}\n\n"
         f"{debt_emoji} *Sleep debt: {coaching.sleep_debt.impairment_level}*\n"
         f"{coaching.sleep_debt.cognitive_note}\n\n"
-        f"💡 *Your 3 actions for tonight:*\n{tips_text}\n\n"
-        f"🦉 *Chronotype note:* {coaching.chronotype_note}"
+        f"💡 *Actions for tonight:*\n{tips_text}\n\n"
+        f"🦉 {coaching.chronotype_note}"
     )

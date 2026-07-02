@@ -13,7 +13,7 @@ load_dotenv()
 from logger_config import get_pipeline_logger
 logger = get_pipeline_logger()
 
-from sleep_coach import generate_coaching, format_coaching_message
+from sleep_coach import generate_coaching, format_coaching_message_conversational
 from agents.tracker import run_get_history
 # Import agent convenience functions
 from agents.intake import run_intake
@@ -39,6 +39,20 @@ from schemas import (
 )
 
 from tools.scoring import compute_sleep_score
+
+
+def _extract_user_context(raw_text: str, notes: str | None) -> str:
+    """Pull a short empathetic opener from the check-in transcript."""
+    if notes and notes.strip():
+        return f"Based on what you shared — {notes.strip()} — here's what I'd focus on tonight."
+
+    for line in raw_text.splitlines():
+        if line.startswith("User:"):
+            snippet = line.removeprefix("User:").strip()
+            if len(snippet) > 20:
+                return f"You mentioned \"{snippet[:120]}{'...' if len(snippet) > 120 else ''}\" — here's my take."
+    return ""
+
 
 class RestIQPipeline:
     """
@@ -82,7 +96,6 @@ class RestIQPipeline:
         history = run_get_history(user_id, days=7)
         
         # 7. Generate science-based coaching
-        from sleep_coach import generate_coaching, format_coaching_message
         coaching = generate_coaching(
             entry=entry,
             history=history,
@@ -91,7 +104,8 @@ class RestIQPipeline:
         )
         
         # 8. Format the reply
-        coaching_text = format_coaching_message(coaching)
+        user_context = _extract_user_context(raw_text, entry.notes)
+        coaching_text = format_coaching_message_conversational(coaching, user_context)
         
         reply_message = (
             f"✅ *Sleep logged!*\n"

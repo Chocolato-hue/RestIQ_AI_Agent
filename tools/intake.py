@@ -31,7 +31,8 @@ class SleepExtractionSchema(BaseModel):
 
 _SYSTEM_INSTRUCTION = (
     "You are an expert sleep data extraction assistant.\n"
-    "Analyze the user's natural language check-in text and extract structured sleep information.\n"
+    "Analyze the user's natural language check-in text (which may be a full "
+    "conversation transcript from a sleep concierge chat) and extract structured sleep information.\n"
     "Strictly extract all required fields and return ONLY a valid JSON object matching the following structure.\n"
     "Do NOT wrap the response in markdown code blocks. The response must be pure JSON.\n"
     "{\n"
@@ -47,7 +48,11 @@ _SYSTEM_INSTRUCTION = (
     '  "energy_level": 3,\n'
     '  "notes": null\n'
     "}\n"
-    "If any value is not explicitly mentioned, estimate it reasonably based on context or use standard sensible defaults:\n"
+    "Extraction rules:\n"
+    "- Read the full transcript including RestIQ/User turns and any 'Collected slots summary'.\n"
+    "- Use explicit user statements over RestIQ questions. If user denied caffeine, set caffeine_after_2pm=false.\n"
+    "- Do NOT invent values that were never mentioned or clearly implied.\n"
+    "- For fuzzy times ('around 2 or 3am'), pick the most likely single HH:MM and note ambiguity in notes.\n"
     "- bedtime & wake_time: HH:MM format (24-hour clock)\n"
     "- wake_up_count: integer (0-10)\n"
     "- sleep_quality: POOR, FAIR, GOOD, or EXCELLENT\n"
@@ -55,7 +60,7 @@ _SYSTEM_INSTRUCTION = (
     "- caffeine_after_2pm, exercise_today, screen_time_before_bed: boolean\n"
     "- focus_level: integer 1-5. Only infer from explicit statements about concentration. If none, use 3.\n"
     "- energy_level: integer 1-5. Only infer from explicit statements about tiredness. If none, use 3.\n"
-    "- notes: str or null"
+    "- notes: str or null — include meaningful context from the conversation (forced wake, stress, etc.)"
 )
 
 
