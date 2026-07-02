@@ -7,13 +7,13 @@ import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Import loggers
 from logger_config import get_pipeline_logger
 logger = get_pipeline_logger()
 
-from sleep_coach import generate_coaching, format_coaching_message_conversational
+from sleep_coach import generate_coaching, get_coaching_message
 from agents.tracker import run_get_history
 # Import agent convenience functions
 from agents.intake import run_intake
@@ -105,7 +105,7 @@ class RestIQPipeline:
         
         # 8. Format the reply
         user_context = _extract_user_context(raw_text, entry.notes)
-        coaching_text = format_coaching_message_conversational(coaching, user_context)
+        coaching_text = get_coaching_message(coaching, user_context=user_context)
         
         reply_message = (
             f"✅ *Sleep logged!*\n"

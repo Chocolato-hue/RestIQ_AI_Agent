@@ -4,9 +4,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 import asyncio
 import datetime
 import sqlite3
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 from logger_config import get_bot_logger
 logger = get_bot_logger()
@@ -262,10 +263,13 @@ async def send_daily_checkins(app: Application):
     except Exception as e:
         logger.error("[BOT] Error executing send_daily_checkins: %s", str(e), exc_info=True)
 
-
+async def post_init(app: Application):
+    app.bot_data["scheduler"].start()
+    logger.info("[BOT] Scheduler started via post_init")
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -274,13 +278,18 @@ def main():
         sys.exit(1)
 
     logger.info("[BOT] Initializing RestIQ bot...")
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("checkin", handle_checkin_command))
     app.add_handler(CommandHandler("report", handle_report_command))
     app.add_handler(CommandHandler("help", handle_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    scheduler = AsyncIOScheduler()
+    now = datetime.datetime.now()
+    scheduler.add_job(send_daily_checkins, 'cron', hour=now.hour, minute=now.minute + 2, args=[app], misfire_grace_time=60  )
+    app.bot_data["scheduler"] = scheduler
 
     logger.info("[BOT] RestIQ bot started")
     app.run_polling(drop_pending_updates=True)
