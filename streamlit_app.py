@@ -222,6 +222,7 @@ with tab_checkin:
         st.session_state.checkin_session = concierge_agent.session_to_dict(session)
         st.session_state.checkin_analyzed = False
         st.session_state.checkin_result = None
+        st.session_state.checkin_analysis = None
 
     def _chat_bubble(sender: str, message: str, is_user: bool = False):
         row_class = "user-row" if is_user else "bot-row"
@@ -255,6 +256,79 @@ with tab_checkin:
     st.markdown("</div>", unsafe_allow_html=True)
 
     session_complete = concierge_agent.is_complete(session)
+
+    def _score_label(score: int) -> str:
+        if score >= 90:
+            return "🟢 Excellent"
+        if score >= 75:
+            return "🟢 Great"
+        if score >= 60:
+            return "🟡 Good"
+        if score >= 40:
+            return "🟠 Fair"
+        return "🔴 Poor"
+
+    def _derive_coaching_focus(entry) -> tuple[str, str, str]:
+        biggest_issue = "Maintain consistency"
+        tonight_goal = "Keep your bedtime and wake-up time consistent"
+        why_it_matters = "A consistent routine helps your body predict when to sleep and wake."
+
+        if entry.screen_time_before_bed:
+            biggest_issue = "📱 Screen time before bed"
+            tonight_goal = "Stop screens at least 60 minutes before bed"
+            why_it_matters = "Screen light can delay melatonin release, making it harder to fall asleep."
+        if entry.caffeine_after_2pm:
+            biggest_issue = "☕ Late caffeine intake"
+            tonight_goal = "Avoid caffeine after 2 PM"
+            why_it_matters = "Caffeine can stay active for hours and reduce sleep quality."
+        if entry.sleep_duration < 7:
+            biggest_issue = "⏳ Short sleep duration"
+            tonight_goal = "Go to bed 20–30 minutes earlier tonight"
+            why_it_matters = "Sleeping less than 7 hours can increase tiredness and reduce focus the next day."
+        if entry.wake_up_count > 1:
+            biggest_issue = "🔔 Frequent wake-ups"
+            tonight_goal = "Create a calmer wind-down routine before bed"
+            why_it_matters = "Night interruptions reduce deep sleep and can make you feel tired in the morning."
+
+        return biggest_issue, tonight_goal, why_it_matters
+
+    def _render_checkin_analysis(analysis: dict):
+        score = analysis["score"]
+        st.write("")
+        with st.container(border=True):
+            st.success("✅ Sleep logged successfully!")
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("⭐ Sleep Score", f"{score}/100", analysis["score_label"])
+            col2.metric("🛌 Duration", f"{analysis['duration']}h")
+            col3.metric("⏰ Tonight's Bedtime", analysis["bedtime"])
+
+            st.divider()
+
+            if score >= 90:
+                st.success("🟢 **Excellent Night!**\n\nYou had an excellent night's sleep. Keep following this routine.")
+            elif score >= 75:
+                st.success("🟢 **Great Sleep!**\n\nYou're building healthy sleep habits. Keep up the consistency.")
+            elif score >= 60:
+                st.warning("🟡 **Good Progress**\n\nYour sleep is improving, but there are still a few habits worth refining.")
+            elif score >= 40:
+                st.warning("🟠 **Needs Improvement**\n\nToday's sleep quality wasn't ideal. Focus on tonight's recommendations.")
+            else:
+                st.error("🔴 **Poor Sleep Night**\n\nYour sleep was significantly affected. Let's improve it tonight.")
+
+            st.write("")
+            st.markdown("### 🧠 RestIQ's Analysis")
+
+            issue_col, goal_col = st.columns(2)
+            with issue_col:
+                st.error(f"**🚨 Biggest Issue**\n\n{analysis['biggest_issue']}")
+            with goal_col:
+                st.success(f"**🎯 Tonight's Goal**\n\n{analysis['tonight_goal']}")
+
+            st.info(f"**💡 Why it matters**\n\n{analysis['why_it_matters']}")
+
+            if analysis.get("plan_adjusted"):
+                st.info(f"📋 **Plan update:** {analysis['plan_reason']}")
 
     if not session_complete and not st.session_state.get("checkin_analyzed"):
         answer = st.text_input("Type your reply", key="concierge_reply")
@@ -292,84 +366,22 @@ with tab_checkin:
                     result = run_checkin(user_id, transcript)
                     entry = result["entry"]
                     circadian = result["circadian"]
-                    reply_text = result["reply_message"]
-
-                    biggest_issue = "Maintain consistency"
-                    tonight_goal = "Keep your bedtime and wake-up time consistent"
-                    why_it_matters = "A consistent routine helps your body predict when to sleep and wake."
-
-                    if entry.screen_time_before_bed:
-                        biggest_issue = "📱 Screen time before bed"
-                        tonight_goal = "Stop screens at least 60 minutes before bed"
-                        why_it_matters = "Screen light can delay melatonin release, making it harder to fall asleep."
-
-                    if entry.caffeine_after_2pm:
-                        biggest_issue = "☕ Late caffeine intake"
-                        tonight_goal = "Avoid caffeine after 2 PM"
-                        why_it_matters = "Caffeine can stay active for hours and reduce sleep quality."
-
-                    if entry.sleep_duration < 7:
-                        biggest_issue = "⏳ Short sleep duration"
-                        tonight_goal = "Go to bed 20–30 minutes earlier tonight"
-                        why_it_matters = "Sleeping less than 7 hours can increase tiredness and reduce focus the next day."
-
-                    if entry.wake_up_count > 1:
-                        biggest_issue = "🔔 Frequent wake-ups"
-                        tonight_goal = "Create a calmer wind-down routine before bed"
-                        why_it_matters = "Night interruptions reduce deep sleep and can make you feel tired in the morning."
-
+                    biggest_issue, tonight_goal, why_it_matters = _derive_coaching_focus(entry)
                     score = entry.score
 
-                    if score >= 90:
-                        score_label = "🟢 Excellent"
-                    elif score >= 75:
-                        score_label = "🟢 Great"
-                    elif score >= 60:
-                        score_label = "🟡 Good"
-                    elif score >= 40:
-                        score_label = "🟠 Fair"
-                    else:
-                        score_label = "🔴 Poor"
-
                     st.session_state.checkin_analyzed = True
-                    st.session_state.checkin_result = reply_text
-
-                    st.write("")
-                    with st.container(border=True):
-                        st.success("✅ Sleep logged successfully!")
-
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("⭐ Sleep Score", f"{score}/100", score_label)
-                        col2.metric("🛌 Duration", f"{entry.sleep_duration}h")
-                        col3.metric("⏰ Tonight's Bedtime", circadian.recommended_bedtime)
-
-                        st.divider()
-
-                        if score >= 90:
-                            st.success("🟢 **Excellent Night!**\n\nYou had an excellent night's sleep. Keep following this routine.")
-                        elif score >= 75:
-                            st.success("🟢 **Great Sleep!**\n\nYou're building healthy sleep habits. Keep up the consistency.")
-                        elif score >= 60:
-                            st.warning("🟡 **Good Progress**\n\nYour sleep is improving, but there are still a few habits worth refining.")
-                        elif score >= 40:
-                            st.warning("🟠 **Needs Improvement**\n\nToday's sleep quality wasn't ideal. Focus on tonight's recommendations.")
-                        else:
-                            st.error("🔴 **Poor Sleep Night**\n\nYour sleep was significantly affected. Let's improve it tonight.")
-
-                        st.write("")
-                        st.markdown("### 🧠 RestIQ's Analysis")
-
-                        issue_col, goal_col = st.columns(2)
-                        with issue_col:
-                            st.error(f"**🚨 Biggest Issue**\n\n{biggest_issue}")
-                        with goal_col:
-                            st.success(f"**🎯 Tonight's Goal**\n\n{tonight_goal}")
-
-                        st.info(f"**💡 Why it matters**\n\n{why_it_matters}")
-
-                        if result["plan_adjustment"].adjusted:
-                            st.info(f"📋 **Plan update:** {result['plan_adjustment'].reason}")
-
+                    st.session_state.checkin_result = result["reply_message"]
+                    st.session_state.checkin_analysis = {
+                        "score": score,
+                        "score_label": _score_label(score),
+                        "duration": entry.sleep_duration,
+                        "bedtime": circadian.recommended_bedtime,
+                        "biggest_issue": biggest_issue,
+                        "tonight_goal": tonight_goal,
+                        "why_it_matters": why_it_matters,
+                        "plan_adjusted": result["plan_adjustment"].adjusted,
+                        "plan_reason": result["plan_adjustment"].reason,
+                    }
                     st.rerun()
 
                 except Exception:
@@ -377,11 +389,15 @@ with tab_checkin:
                     st.info("The AI service may be temporarily unavailable. Please try again later.")
                     st.caption("Technical details are available in the terminal logs.")
 
+    elif st.session_state.get("checkin_analyzed") and st.session_state.get("checkin_analysis"):
+        _render_checkin_analysis(st.session_state.checkin_analysis)
+
     if st.button("Start over", use_container_width=True):
         session, _opener = concierge_agent.start_session(user_id, latest_entry)
         st.session_state.checkin_session = concierge_agent.session_to_dict(session)
         st.session_state.checkin_analyzed = False
         st.session_state.checkin_result = None
+        st.session_state.checkin_analysis = None
         st.rerun()
 
 # ── Tab 2: Weekly Report ─────────────────────────────────────────────────────
