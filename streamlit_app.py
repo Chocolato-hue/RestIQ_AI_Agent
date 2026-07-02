@@ -22,11 +22,14 @@ import streamlit as st
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
+
+GEMINI_CONFIGURED = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
 
 from pipeline import run_checkin, run_weekly_report
 from agents.tracker import run_get_history, run_get_latest
 from agents.scheduler import run_evaluate_plan
+from agents import concierge as concierge_agent
 from tools import profile as profile_tool
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,19 +62,33 @@ def _call_register(user_id: str, username: str, wake_time: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 query_user_id = st.query_params.get("user_id")
+resolved_id = query_user_id or st.session_state.get("user_id")
+
+if not resolved_id:
+    import uuid
+    resolved_id = f"guest-{uuid.uuid4().hex[:8]}"
+    try:
+        _call_register(resolved_id, "Guest", "07:00")
+    except Exception as e:
+        st.error(f"Could not start session: {e}")
+        st.stop()
+    st.session_state["just_registered"] = True
+
+st.session_state["user_id"] = resolved_id
+st.query_params["user_id"] = resolved_id
+# Seed the widget's own state BEFORE the widget is created, so `value=` isn't ignored
+st.session_state["sidebar_user_id_input"] = resolved_id
 
 with st.sidebar:
     st.markdown("### 🌙 RestIQ")
     st.caption("Sleep concierge dashboard")
 
-    # If we got a user_id from the deep-link or a previous session, pre-fill it.
     user_id = st.text_input(
         "User ID",
-        value=query_user_id or st.session_state.get("user_id", ""),
         help="Auto-filled after registration, or paste your existing ID.",
         key="sidebar_user_id_input",
     )
-    if user_id:
+    if user_id and user_id != resolved_id:
         st.session_state["user_id"] = user_id
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,45 +96,17 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if not user_id:
-    st.title("🌙 RestIQ")
-    st.subheader("Better sleep, one morning at a time.")
-    st.write(
-        "RestIQ tracks your nightly habits, scores your sleep, and nudges your "
-        "bedtime based on real patterns — not generic advice."
-    )
-
-    st.divider()
-    st.subheader("Create your account")
-
-    with st.form("registration_form"):
-        display_name = st.text_input(
-            "Your name",
-            placeholder="Ada Lovelace",
-            help="Used in reports and morning messages.",
-        )
-        wake_time = st.time_input(
-            "Preferred wake-up time",
-            value=__import__("datetime").time(7, 0),
-            help="RestIQ will work backwards from this to recommend your bedtime.",
-        )
-        submitted = st.form_submit_button("Create account →", type="primary")
-
-    if submitted:
-        if not display_name.strip():
-            st.warning("Enter your name to continue.")
-        else:
-            slug = _slugify(display_name)
-            wake_str = wake_time.strftime("%H:%M")
-            with st.spinner("Setting up your profile..."):
-                try:
-                    _call_register(slug, display_name.strip(), wake_str)
-                    st.session_state["user_id"] = slug
-                    st.session_state["just_registered"] = True
-                    st.query_params["user_id"] = slug
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not create account: {e}")
-    st.stop()
+    import uuid
+    auto_id = f"guest-{uuid.uuid4().hex[:8]}"
+    try:
+        _call_register(auto_id, "Guest", "07:00")
+        st.session_state["user_id"] = auto_id
+        st.session_state["just_registered"] = True
+        st.query_params["user_id"] = auto_id
+        st.rerun()
+    except Exception as e:
+        st.error(f"Could not start session: {e}")
+        st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Post-registration: show "Connect Telegram" banner (once)
@@ -130,6 +119,7 @@ if st.session_state.pop("just_registered", False):
         "**Connect Telegram to get daily check-in reminders.**\n\n"
         f"Click the button below, then tap **Start** in Telegram."
     )
+    st.caption("New to Telegram? Download the app or open web.telegram.org and log in first, then click below.")
     st.link_button("📲 Connect Telegram", telegram_link, type="primary")
     st.divider()
 
@@ -158,7 +148,13 @@ tab_checkin, tab_report, tab_plan = st.tabs(["Check-in", "Weekly Report", "Plan 
 with tab_checkin:
     st.write("")
     st.markdown("### 💬 Conversational Daily Check-in")
-    st.caption("Chat naturally with RestIQ. It asks adaptive follow-up questions, then gives structured coaching.")
+    st.caption("Tell RestIQ about last night in your own words — it'll only ask what's still missing.")
+
+    if not GEMINI_CONFIGURED:
+        st.error(
+            "**Gemini API key missing.** The check-in chat needs `GOOGLE_API_KEY` in your `.env` file. "
+            "Get a free key at [Google AI Studio](https://aistudio.google.com/apikey), then restart Streamlit."
+        )
 
     st.markdown(
         """
@@ -207,238 +203,189 @@ with tab_checkin:
     )
 
     latest_entry = run_get_latest(user_id)
-    memory_message = None
 
-    if latest_entry:
-        if latest_entry.screen_time_before_bed:
-            memory_message = "📱 Yesterday's focus was reducing screen time before bed."
-        elif latest_entry.caffeine_after_2pm:
-            memory_message = "☕ Yesterday's focus was avoiding caffeine after 2 PM."
-        elif latest_entry.wake_up_count > 1:
-            memory_message = "🌙 Yesterday you woke up multiple times during the night."
-        elif latest_entry.sleep_duration < 7:
-            memory_message = "😴 Yesterday's goal was getting more than 7 hours of sleep."
-        elif latest_entry.score and latest_entry.score >= 85:
-            memory_message = "🎉 Yesterday you had a great sleep score. Let's keep the streak going!"
-        else:
-            memory_message = "🌙 Welcome back! Let's see how you slept last night."
-
-    if "checkin_answers" not in st.session_state:
-        st.session_state.checkin_answers = {}
-    if "checkin_current_key" not in st.session_state:
-        st.session_state.checkin_current_key = "sleep_feeling"
+    if "checkin_session" not in st.session_state:
+        session, _opener = concierge_agent.start_session(user_id, latest_entry)
+        st.session_state.checkin_session = concierge_agent.session_to_dict(session)
+        st.session_state.checkin_analyzed = False
+        st.session_state.checkin_result = None
+        st.session_state.checkin_analysis = None
 
     def _chat_bubble(sender: str, message: str, is_user: bool = False):
         row_class = "user-row" if is_user else "bot-row"
         bubble_class = "user-bubble" if is_user else "bot-bubble"
         name = "You" if is_user else "RestIQ"
+        safe_message = message.replace("\n", "<br>")
 
         st.markdown(
             f"""
             <div class="{row_class}">
                 <div class="{bubble_class}">
                     <div class="bubble-name">{name}</div>
-                    {message}
+                    {safe_message}
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    def _next_question_key(answers: dict) -> str:
-        if "sleep_feeling" not in answers:
-            return "sleep_feeling"
-
-        feeling = answers.get("sleep_feeling", "").lower()
-        if any(word in feeling for word in ["bad", "terrible", "poor", "tired", "exhausted", "groggy", "not good"]):
-            if "sleep_problem" not in answers:
-                return "sleep_problem"
-
-        if "bed_wake" not in answers:
-            return "bed_wake"
-
-        if "wakeups" not in answers:
-            return "wakeups"
-
-        wakeups = answers.get("wakeups", "").lower()
-        if any(word in wakeups for word in ["yes", "twice", "three", "3", "2", "many", "multiple"]):
-            if "wake_reason" not in answers:
-                return "wake_reason"
-
-        if "habits" not in answers:
-            return "habits"
-
-        habits = answers.get("habits", "").lower()
-        if any(word in habits for word in ["coffee", "caffeine", "tea", "phone", "screen", "mobile", "scroll"]):
-            if "habit_detail" not in answers:
-                return "habit_detail"
-
-        if "mood" not in answers:
-            return "mood"
-
-        return "done"
-
-    question_text = {
-        "sleep_feeling": "How did you sleep last night?",
-        "sleep_problem": "Sorry to hear that. What do you think affected your sleep the most?",
-        "bed_wake": "What time did you go to bed and wake up?",
-        "wakeups": "Did you wake up during the night? If yes, how many times?",
-        "wake_reason": "What do you think caused the wake-ups? Noise, stress, bathroom, discomfort, or something else?",
-        "habits": "Did you have caffeine after 2 PM, exercise, or use screens before bed?",
-        "habit_detail": "Can you give a little more detail about that habit? For example, when did you drink caffeine or how long did you use screens?",
-        "mood": "How did you feel when you woke up?",
-    }
+    session = concierge_agent.session_from_dict(st.session_state.checkin_session)
 
     st.markdown("#### RestIQ Chat")
     st.markdown('<div class="chat-box">', unsafe_allow_html=True)
 
-    for key, answer in st.session_state.checkin_answers.items():
-        if key in question_text:
-            _chat_bubble("RestIQ", question_text[key], is_user=False)
-            _chat_bubble("You", answer, is_user=True)
+    for msg in session.messages:
+        _chat_bubble("You" if msg.role == "user" else "RestIQ", msg.content, is_user=(msg.role == "user"))
 
-    current_key = _next_question_key(st.session_state.checkin_answers)
-    st.session_state.checkin_current_key = current_key
-
-    if current_key != "done":
-        if current_key == "sleep_feeling" and memory_message:
-            _chat_bubble(
-                "RestIQ",
-                f"Good morning 😊<br><br>{memory_message}<br><br>{question_text[current_key]}",
-                is_user=False,
-            )
-        else:
-            _chat_bubble("RestIQ", question_text[current_key], is_user=False)
-    else:
-        _chat_bubble("RestIQ", "✅ I have enough information to analyze your sleep.", is_user=False)
+    if st.session_state.get("checkin_result"):
+        _chat_bubble("RestIQ", st.session_state.checkin_result, is_user=False)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if current_key != "done":
-        answer = st.text_input("Type your reply", key=f"answer_{current_key}")
+    session_complete = concierge_agent.is_complete(session)
+
+    def _score_label(score: int) -> str:
+        if score >= 90:
+            return "🟢 Excellent"
+        if score >= 75:
+            return "🟢 Great"
+        if score >= 60:
+            return "🟡 Good"
+        if score >= 40:
+            return "🟠 Fair"
+        return "🔴 Poor"
+
+    def _derive_coaching_focus(entry) -> tuple[str, str, str]:
+        biggest_issue = "Maintain consistency"
+        tonight_goal = "Keep your bedtime and wake-up time consistent"
+        why_it_matters = "A consistent routine helps your body predict when to sleep and wake."
+
+        if entry.screen_time_before_bed:
+            biggest_issue = "📱 Screen time before bed"
+            tonight_goal = "Stop screens at least 60 minutes before bed"
+            why_it_matters = "Screen light can delay melatonin release, making it harder to fall asleep."
+        if entry.caffeine_after_2pm:
+            biggest_issue = "☕ Late caffeine intake"
+            tonight_goal = "Avoid caffeine after 2 PM"
+            why_it_matters = "Caffeine can stay active for hours and reduce sleep quality."
+        if entry.sleep_duration < 7:
+            biggest_issue = "⏳ Short sleep duration"
+            tonight_goal = "Go to bed 20–30 minutes earlier tonight"
+            why_it_matters = "Sleeping less than 7 hours can increase tiredness and reduce focus the next day."
+        if entry.wake_up_count > 1:
+            biggest_issue = "🔔 Frequent wake-ups"
+            tonight_goal = "Create a calmer wind-down routine before bed"
+            why_it_matters = "Night interruptions reduce deep sleep and can make you feel tired in the morning."
+
+        return biggest_issue, tonight_goal, why_it_matters
+
+    def _render_checkin_analysis(analysis: dict):
+        score = analysis["score"]
+        st.write("")
+        with st.container(border=True):
+            st.success("✅ Sleep logged successfully!")
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("⭐ Sleep Score", f"{score}/100", analysis["score_label"])
+            col2.metric("🛌 Duration", f"{analysis['duration']}h")
+            col3.metric("⏰ Tonight's Bedtime", analysis["bedtime"])
+
+            st.divider()
+
+            if score >= 90:
+                st.success("🟢 **Excellent Night!**\n\nYou had an excellent night's sleep. Keep following this routine.")
+            elif score >= 75:
+                st.success("🟢 **Great Sleep!**\n\nYou're building healthy sleep habits. Keep up the consistency.")
+            elif score >= 60:
+                st.warning("🟡 **Good Progress**\n\nYour sleep is improving, but there are still a few habits worth refining.")
+            elif score >= 40:
+                st.warning("🟠 **Needs Improvement**\n\nToday's sleep quality wasn't ideal. Focus on tonight's recommendations.")
+            else:
+                st.error("🔴 **Poor Sleep Night**\n\nYour sleep was significantly affected. Let's improve it tonight.")
+
+            st.write("")
+            st.markdown("### 🧠 RestIQ's Analysis")
+
+            issue_col, goal_col = st.columns(2)
+            with issue_col:
+                st.error(f"**🚨 Biggest Issue**\n\n{analysis['biggest_issue']}")
+            with goal_col:
+                st.success(f"**🎯 Tonight's Goal**\n\n{analysis['tonight_goal']}")
+
+            st.info(f"**💡 Why it matters**\n\n{analysis['why_it_matters']}")
+
+            if analysis.get("plan_adjusted"):
+                st.info(f"📋 **Plan update:** {analysis['plan_reason']}")
+
+    if not session_complete and not st.session_state.get("checkin_analyzed"):
+        answer = st.text_input("Type your reply", key="concierge_reply")
 
         if st.button("Send", type="primary", use_container_width=True):
             if not answer.strip():
                 st.warning("Please type a reply before sending.")
             else:
-                st.session_state.checkin_answers[current_key] = answer.strip()
-                st.rerun()
+                with st.spinner("RestIQ is thinking..."):
+                    try:
+                        session, _reply = concierge_agent.process_turn(session, answer.strip())
+                        st.session_state.checkin_session = concierge_agent.session_to_dict(session)
+                        st.rerun()
+                    except Exception as e:
+                        err = str(e)
+                        if "GOOGLE_API_KEY" in err:
+                            st.error(err)
+                        else:
+                            st.error(f"Couldn't process your reply: {err}")
+                            st.caption("Check your API key, model name (GEMINI_MODEL), and terminal logs.")
 
-    else:
-        combined_text = " ".join(
-            f"{question_text.get(key, key)} Answer: {value}."
-            for key, value in st.session_state.checkin_answers.items()
-        )
-
+    elif session_complete and not st.session_state.get("checkin_analyzed"):
         with st.expander("Review collected check-in"):
-            review_labels = {
-                "sleep_feeling": "Sleep feeling",
-                "sleep_problem": "Main issue",
-                "bed_wake": "Bed / Wake time",
-                "wakeups": "Wake-ups",
-                "wake_reason": "Wake-up reason",
-                "habits": "Habits",
-                "habit_detail": "Habit details",
-                "mood": "Morning mood",
-            }
-
-            for key, label in review_labels.items():
-                if key in st.session_state.checkin_answers:
-                    st.markdown(f"**{label}:** {st.session_state.checkin_answers[key]}")
+            slots = session.slots.model_dump(exclude_none=True)
+            if slots:
+                for key, value in slots.items():
+                    st.markdown(f"**{key.replace('_', ' ').title()}:** {value}")
+            else:
+                st.write("Details captured in conversation above.")
 
         if st.button("Analyze my sleep", type="primary", use_container_width=True):
             with st.spinner("Analyzing your sleep..."):
                 try:
-                    result = run_checkin(user_id, combined_text)
+                    transcript = concierge_agent.build_transcript(session)
+                    result = run_checkin(user_id, transcript)
                     entry = result["entry"]
                     circadian = result["circadian"]
-                    reply_text = result["reply_message"]
-
-                    biggest_issue = "Maintain consistency"
-                    tonight_goal = "Keep your bedtime and wake-up time consistent"
-                    why_it_matters = "A consistent routine helps your body predict when to sleep and wake."
-
-                    if entry.screen_time_before_bed:
-                        biggest_issue = "📱 Screen time before bed"
-                        tonight_goal = "Stop screens at least 60 minutes before bed"
-                        why_it_matters = "Screen light can delay melatonin release, making it harder to fall asleep."
-
-                    if entry.caffeine_after_2pm:
-                        biggest_issue = "☕ Late caffeine intake"
-                        tonight_goal = "Avoid caffeine after 2 PM"
-                        why_it_matters = "Caffeine can stay active for hours and reduce sleep quality."
-
-                    if entry.sleep_duration < 7:
-                        biggest_issue = "⏳ Short sleep duration"
-                        tonight_goal = "Go to bed 20–30 minutes earlier tonight"
-                        why_it_matters = "Sleeping less than 7 hours can increase tiredness and reduce focus the next day."
-
-                    if entry.wake_up_count > 1:
-                        biggest_issue = "🔔 Frequent wake-ups"
-                        tonight_goal = "Create a calmer wind-down routine before bed"
-                        why_it_matters = "Night interruptions reduce deep sleep and can make you feel tired in the morning."
-
+                    biggest_issue, tonight_goal, why_it_matters = _derive_coaching_focus(entry)
                     score = entry.score
 
-                    if score >= 90:
-                        score_label = "🟢 Excellent"
-                    elif score >= 75:
-                        score_label = "🟢 Great"
-                    elif score >= 60:
-                        score_label = "🟡 Good"
-                    elif score >= 40:
-                        score_label = "🟠 Fair"
-                    else:
-                        score_label = "🔴 Poor"
-
-                    st.write("")
-                    with st.container(border=True):
-                        st.success("✅ Sleep logged successfully!")
-
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("⭐ Sleep Score", f"{score}/100", score_label)
-                        col2.metric("🛌 Duration", f"{entry.sleep_duration}h")
-                        col3.metric("⏰ Tonight's Bedtime", circadian.recommended_bedtime)
-
-                        st.divider()
-
-                        if score >= 90:
-                            st.success("🟢 **Excellent Night!**\n\nYou had an excellent night's sleep. Keep following this routine.")
-                        elif score >= 75:
-                            st.success("🟢 **Great Sleep!**\n\nYou're building healthy sleep habits. Keep up the consistency.")
-                        elif score >= 60:
-                            st.warning("🟡 **Good Progress**\n\nYour sleep is improving, but there are still a few habits worth refining.")
-                        elif score >= 40:
-                            st.warning("🟠 **Needs Improvement**\n\nToday's sleep quality wasn't ideal. Focus on tonight's recommendations.")
-                        else:
-                            st.error("🔴 **Poor Sleep Night**\n\nYour sleep was significantly affected. Let's improve it tonight.")
-
-                        st.write("")
-                        st.markdown("### 🧠 RestIQ's Analysis")
-
-                        issue_col, goal_col = st.columns(2)
-                        with issue_col:
-                            st.error(f"**🚨 Biggest Issue**\n\n{biggest_issue}")
-                        with goal_col:
-                            st.success(f"**🎯 Tonight's Goal**\n\n{tonight_goal}")
-
-                        st.info(f"**💡 Why it matters**\n\n{why_it_matters}")
-
-                        if result["plan_adjustment"].adjusted:
-                            st.info(f"📋 **Plan update:** {result['plan_adjustment'].reason}")
-
-                        with st.expander("🧠 How RestIQ analyzed your sleep"):
-                            st.write(reply_text)
+                    st.session_state.checkin_analyzed = True
+                    st.session_state.checkin_result = result["reply_message"]
+                    st.session_state.checkin_analysis = {
+                        "score": score,
+                        "score_label": _score_label(score),
+                        "duration": entry.sleep_duration,
+                        "bedtime": circadian.recommended_bedtime,
+                        "biggest_issue": biggest_issue,
+                        "tonight_goal": tonight_goal,
+                        "why_it_matters": why_it_matters,
+                        "plan_adjusted": result["plan_adjustment"].adjusted,
+                        "plan_reason": result["plan_adjustment"].reason,
+                    }
+                    st.rerun()
 
                 except Exception:
                     st.error("Couldn't process your check-in right now.")
                     st.info("The AI service may be temporarily unavailable. Please try again later.")
                     st.caption("Technical details are available in the terminal logs.")
 
-        if st.button("Start over", use_container_width=True):
-            st.session_state.checkin_answers = {}
-            st.session_state.checkin_current_key = "sleep_feeling"
-            st.rerun()
+    elif st.session_state.get("checkin_analyzed") and st.session_state.get("checkin_analysis"):
+        _render_checkin_analysis(st.session_state.checkin_analysis)
+
+    if st.button("Start over", use_container_width=True):
+        session, _opener = concierge_agent.start_session(user_id, latest_entry)
+        st.session_state.checkin_session = concierge_agent.session_to_dict(session)
+        st.session_state.checkin_analyzed = False
+        st.session_state.checkin_result = None
+        st.session_state.checkin_analysis = None
+        st.rerun()
 
 # ── Tab 2: Weekly Report ─────────────────────────────────────────────────────
 
