@@ -198,16 +198,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    await update.message.reply_text("📊 Generating your weekly report...")
+    telegram_chat_id = str(update.effective_user.id)
+
     try:
+        conn = sqlite3.connect("sleep_data.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_id FROM users WHERE telegram_chat_id = ?",
+            (telegram_chat_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        user_id = row[0] if row else telegram_chat_id
+
+        await update.message.reply_text("📊 Generating your weekly report...")
+
         report_res = await asyncio.to_thread(run_weekly_report, user_id)
         chart_path = report_res["chart_path"]
+        logger.info("[BOT] chart_path=%s exists=%s", chart_path, os.path.exists(chart_path) if chart_path else False)
+
         if chart_path and os.path.exists(chart_path):
-            with open(chart_path, "rb") as photo:
-                await update.message.reply_photo(photo=photo)
-        await update.message.reply_text(report_res["telegram_message"])
+            try:
+                ext = os.path.splitext(chart_path)[1].lower()
+
+                if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+                    with open(chart_path, "rb") as photo:
+                        await update.message.reply_photo(photo=photo)
+                else:
+                    with open(chart_path, "rb") as document:
+                        await update.message.reply_document(document=document)
+
+            except Exception as img_error:
+                logger.warning("[BOT] Could not send chart file: %s", str(img_error))
+                await update.message.reply_text(
+                    "⚠️ Chart could not be sent, but here is your weekly summary:"
+                )
+
+        await update.message.reply_text(
+            report_res["telegram_message"],
+            parse_mode="Markdown"
+        )
+
         logger.info("[BOT] Weekly report sent to user_id: %s", user_id)
+
     except Exception as e:
         logger.error("[BOT] Error generating weekly report: %s", str(e), exc_info=True)
         await update.message.reply_text(f"❌ Failed to generate weekly report: {e}")

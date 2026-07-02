@@ -44,48 +44,98 @@ class ReporterAgent:
             raise ValueError(f"Report generation failed: {e}") from e
 
     def format_telegram_message(self, report: WeeklyReportSchema) -> str:
-        """
-        Formats the weekly sleep report data into a beautiful and readable Telegram message.
-        """
         analysis = report.analysis
-        
+
         emoji_map = {
             VerdictLabel.NEEDS_ATTENTION: "🔴",
             VerdictLabel.IMPROVING: "🟡",
             VerdictLabel.ON_TRACK: "🟢",
-            VerdictLabel.EXCELLENT: "⭐"
+            VerdictLabel.EXCELLENT: "⭐",
         }
-        
+
         verdict_val = analysis.verdict
         if isinstance(verdict_val, str):
             try:
                 verdict_val = VerdictLabel(verdict_val)
             except ValueError:
                 pass
-        emoji = emoji_map.get(verdict_val, "❓")
-        
-        patterns = "\n".join(f"- {p}" for p in analysis.patterns_detected)
-        
-        best_date = analysis.best_night.date if analysis.best_night else "N/A"
-        best_score = analysis.best_night.score if analysis.best_night else 0
-        worst_date = analysis.worst_night.date if analysis.worst_night else "N/A"
-        worst_score = analysis.worst_night.score if analysis.worst_night else 0
-        
-        milestone = f"\n{report.milestone_message}" if report.milestone_message else ""
-        
-        message = (
-            f"🌙 RestIQ Weekly Report\n"
-            f"{report.week_start} → {report.week_end}\n\n"
-            f"Sleep Score: {analysis.average_score}/100 {emoji}\n"
-            f"Avg Duration: {analysis.average_duration}h\n"
-            f"Avg Wake-ups: {analysis.average_wake_ups}\n"
-            f"Streak: {analysis.streak_days} days 🔥\n\n"
-            f"Best night: {best_date} ({best_score}/100)\n"
-            f"Worst night: {worst_date} ({worst_score}/100)\n\n"
-            f"Key insights:\n{patterns}\n\n"
-            f"Your goal next week:\n{report.next_week_goal}\n"
-            f"{milestone}"
+
+        emoji = emoji_map.get(verdict_val, "🟢")
+
+        def fmt_date(d):
+            if not d or d == "N/A":
+                return "N/A"
+            try:
+                return d.strftime("%b %d")
+            except Exception:
+                return str(d)
+
+        def score_label(score):
+            try:
+                score = float(score)
+            except Exception:
+                return "Sleep Check"
+            if score >= 90:
+                return "Excellent"
+            if score >= 75:
+                return "Great"
+            if score >= 60:
+                return "Good"
+            if score >= 40:
+                return "Needs Work"
+            return "Needs Attention"
+
+        best_date = fmt_date(analysis.best_night.date) if analysis.best_night else "N/A"
+        best_score = analysis.best_night.score if analysis.best_night else "N/A"
+
+        worst_date = fmt_date(analysis.worst_night.date) if analysis.worst_night else "N/A"
+        worst_score = analysis.worst_night.score if analysis.worst_night else "N/A"
+
+        week_start = fmt_date(report.week_start)
+        week_end = fmt_date(report.week_end)
+
+        date_line = (
+            f"📅 *Report Date:* {week_start}"
+            if week_start == week_end
+            else f"📅 *Week:* {week_start} → {week_end}"
         )
+
+        if analysis.patterns_detected:
+            insights = "\n".join(f"• {p}" for p in analysis.patterns_detected[:3])
+        else:
+            insights = "• Keep logging daily to unlock stronger weekly patterns."
+
+        label = score_label(analysis.average_score)
+
+        message = (
+            "🌙 *RestIQ Weekly Sleep Report*\n\n"
+            f"{date_line}\n\n"
+            "────────────────\n\n"
+            "⭐ *Overall Score*\n"
+            f"{emoji} *{label}* ({analysis.average_score}/100)\n\n"
+            f"🛌 *Average Sleep:* {analysis.average_duration}h\n"
+            f"🔔 *Average Wake-ups:* {analysis.average_wake_ups}\n"
+            f"🔥 *Current Streak:* {analysis.streak_days} day(s)\n\n"
+            "────────────────\n\n"
+            "🏆 *Best Night*\n"
+            f"📅 {best_date}\n"
+            f"⭐ {best_score}/100\n\n"
+            "📉 *Needs Improvement*\n"
+            f"📅 {worst_date}\n"
+            f"⭐ {worst_score}/100\n\n"
+            "────────────────\n\n"
+            "🧠 *Weekly Insights*\n\n"
+            f"{insights}\n\n"
+            "────────────────\n\n"
+            "🎯 *Next Week Focus*\n\n"
+            f"✅ {report.next_week_goal}\n\n"
+            "────────────────\n\n"
+            "💙 See you tomorrow for your next check-in!"
+        )
+
+        if report.milestone_message:
+            message += f"\n\n🏆 *Milestone*\n{report.milestone_message}"
+
         return message
 
     def send_to_telegram(self, bot, chat_id: str, report: WeeklyReportSchema) -> bool:
@@ -112,14 +162,30 @@ class ReporterAgent:
                             bot.send_photo(chat_id=chat_id, photo=photo)
                     
                     if inspect.iscoroutinefunction(bot.send_message):
-                        await bot.send_message(chat_id=chat_id, text=message_text)
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=message_text,
+                            parse_mode="Markdown"
+                        )
                     else:
-                        bot.send_message(chat_id=chat_id, text=message_text)
+                        bot.send_message(
+                            chat_id=chat_id,
+                            text=message_text,
+                            parse_mode="Markdown"
+                        )
                 else:
                     if inspect.iscoroutinefunction(bot.send_message):
-                        await bot.send_message(chat_id=chat_id, text=message_text)
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=message_text,
+                            parse_mode="Markdown"
+                        )
                     else:
-                        bot.send_message(chat_id=chat_id, text=message_text)
+                        bot.send_message(
+                            chat_id=chat_id,
+                            text=message_text,
+                            parse_mode="Markdown"
+                        )
             
             # Invoke sending process
             is_async_message = inspect.iscoroutinefunction(bot.send_message)
@@ -141,9 +207,17 @@ class ReporterAgent:
                 if has_chart:
                     with open(chart_path, "rb") as photo:
                         bot.send_photo(chat_id=chat_id, photo=photo)
-                    bot.send_message(chat_id=chat_id, text=message_text)
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=message_text,
+                        parse_mode="Markdown"
+                    )
                 else:
-                    bot.send_message(chat_id=chat_id, text=message_text)
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=message_text,
+                        parse_mode="Markdown"
+                    )
                     
             logger.info("[REPORTER] Report sent successfully.")
             return True
