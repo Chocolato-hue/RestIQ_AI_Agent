@@ -7,13 +7,13 @@ import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Import loggers
 from logger_config import get_pipeline_logger
 logger = get_pipeline_logger()
 
-from sleep_coach import generate_coaching, format_coaching_message
+from sleep_coach import generate_coaching, get_coaching_message, format_coaching_message
 from agents.tracker import run_get_history
 # Import agent convenience functions
 from agents.intake import run_intake
@@ -82,7 +82,6 @@ class RestIQPipeline:
         history = run_get_history(user_id, days=7)
         
         # 7. Generate science-based coaching
-        from sleep_coach import generate_coaching, format_coaching_message
         coaching = generate_coaching(
             entry=entry,
             history=history,
@@ -91,7 +90,7 @@ class RestIQPipeline:
         )
         
         # 8. Format the reply
-        coaching_text = format_coaching_message(coaching)
+        coaching_text = get_coaching_message(coaching)
         
         reply_message = (
             f"✅ *Sleep logged!*\n"

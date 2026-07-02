@@ -22,7 +22,7 @@ import streamlit as st
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 from pipeline import run_checkin, run_weekly_report
 from agents.tracker import run_get_history, run_get_latest
@@ -59,19 +59,33 @@ def _call_register(user_id: str, username: str, wake_time: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 query_user_id = st.query_params.get("user_id")
+resolved_id = query_user_id or st.session_state.get("user_id")
+
+if not resolved_id:
+    import uuid
+    resolved_id = f"guest-{uuid.uuid4().hex[:8]}"
+    try:
+        _call_register(resolved_id, "Guest", "07:00")
+    except Exception as e:
+        st.error(f"Could not start session: {e}")
+        st.stop()
+    st.session_state["just_registered"] = True
+
+st.session_state["user_id"] = resolved_id
+st.query_params["user_id"] = resolved_id
+# Seed the widget's own state BEFORE the widget is created, so `value=` isn't ignored
+st.session_state["sidebar_user_id_input"] = resolved_id
 
 with st.sidebar:
     st.markdown("### 🌙 RestIQ")
     st.caption("Sleep concierge dashboard")
 
-    # If we got a user_id from the deep-link or a previous session, pre-fill it.
     user_id = st.text_input(
         "User ID",
-        value=query_user_id or st.session_state.get("user_id", ""),
         help="Auto-filled after registration, or paste your existing ID.",
         key="sidebar_user_id_input",
     )
-    if user_id:
+    if user_id and user_id != resolved_id:
         st.session_state["user_id"] = user_id
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,45 +93,17 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if not user_id:
-    st.title("🌙 RestIQ")
-    st.subheader("Better sleep, one morning at a time.")
-    st.write(
-        "RestIQ tracks your nightly habits, scores your sleep, and nudges your "
-        "bedtime based on real patterns — not generic advice."
-    )
-
-    st.divider()
-    st.subheader("Create your account")
-
-    with st.form("registration_form"):
-        display_name = st.text_input(
-            "Your name",
-            placeholder="Ada Lovelace",
-            help="Used in reports and morning messages.",
-        )
-        wake_time = st.time_input(
-            "Preferred wake-up time",
-            value=__import__("datetime").time(7, 0),
-            help="RestIQ will work backwards from this to recommend your bedtime.",
-        )
-        submitted = st.form_submit_button("Create account →", type="primary")
-
-    if submitted:
-        if not display_name.strip():
-            st.warning("Enter your name to continue.")
-        else:
-            slug = _slugify(display_name)
-            wake_str = wake_time.strftime("%H:%M")
-            with st.spinner("Setting up your profile..."):
-                try:
-                    _call_register(slug, display_name.strip(), wake_str)
-                    st.session_state["user_id"] = slug
-                    st.session_state["just_registered"] = True
-                    st.query_params["user_id"] = slug
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not create account: {e}")
-    st.stop()
+    import uuid
+    auto_id = f"guest-{uuid.uuid4().hex[:8]}"
+    try:
+        _call_register(auto_id, "Guest", "07:00")
+        st.session_state["user_id"] = auto_id
+        st.session_state["just_registered"] = True
+        st.query_params["user_id"] = auto_id
+        st.rerun()
+    except Exception as e:
+        st.error(f"Could not start session: {e}")
+        st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Post-registration: show "Connect Telegram" banner (once)
@@ -130,6 +116,7 @@ if st.session_state.pop("just_registered", False):
         "**Connect Telegram to get daily check-in reminders.**\n\n"
         f"Click the button below, then tap **Start** in Telegram."
     )
+    st.caption("New to Telegram? Download the app or open web.telegram.org and log in first, then click below.")
     st.link_button("📲 Connect Telegram", telegram_link, type="primary")
     st.divider()
 
