@@ -5,7 +5,7 @@ Pydantic data models for the Sleep Concierge multi-agent system.
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -59,6 +59,13 @@ class PlanTrigger(str, Enum):
     WEEKLY_COMPARISON = "WEEKLY_COMPARISON"
     STREAK_OVERRIDE = "STREAK_OVERRIDE"
     NONE = "NONE"
+
+
+class SlotConfidence(str, Enum):
+    """How confidently a sleep slot was filled during conversational intake."""
+    KNOWN = "known"
+    INFERRED = "inferred"
+    UNKNOWN = "unknown"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -311,3 +318,69 @@ class A2AMessageSchema(BaseModel):
     payload: dict = Field(..., description="The data payload passed between the agents")
     timestamp: datetime = Field(..., description="Timestamp when the message was dispatched")
     session_id: str = Field(..., description="Unique session identifier for tracing conversation/workflow flows")
+
+
+class ChatMessage(BaseModel):
+    """A single message in a concierge check-in conversation."""
+    role: Literal["user", "assistant"] = Field(..., description="Who sent the message")
+    content: str = Field(..., description="Message text")
+
+
+class PartialSleepSlots(BaseModel):
+    """Incrementally collected sleep fields during a concierge check-in."""
+    bedtime: Optional[str] = None
+    wake_time: Optional[str] = None
+    wake_up_count: Optional[int] = Field(None, ge=0, le=10)
+    sleep_quality: Optional[SleepQuality] = None
+    mood_on_wake: Optional[MoodOnWake] = None
+    caffeine_after_2pm: Optional[bool] = None
+    exercise_today: Optional[bool] = None
+    screen_time_before_bed: Optional[bool] = None
+    focus_level: Optional[int] = Field(None, ge=1, le=5)
+    energy_level: Optional[int] = Field(None, ge=1, le=5)
+    notes: Optional[str] = None
+
+
+REQUIRED_CHECKIN_SLOTS = (
+    "bedtime",
+    "wake_time",
+    "wake_up_count",
+    "sleep_quality",
+    "mood_on_wake",
+    "caffeine_after_2pm",
+    "exercise_today",
+    "screen_time_before_bed",
+)
+
+
+class CheckinSessionState(BaseModel):
+    """Stateful concierge check-in session tracked across multiple turns."""
+    user_id: str
+    messages: list[ChatMessage] = Field(default_factory=list)
+    slots: PartialSleepSlots = Field(default_factory=PartialSleepSlots)
+    slot_confidence: dict[str, SlotConfidence] = Field(default_factory=dict)
+    session_context: Optional[str] = Field(
+        None, description="Optional context from prior sleep logs or scheduler hints"
+    )
+    curiosity_notes: list[str] = Field(default_factory=list)
+
+    def missing_slots(self) -> list[str]:
+        missing = []
+        for name in REQUIRED_CHECKIN_SLOTS:
+            conf = self.slot_confidence.get(name, SlotConfidence.UNKNOWN)
+            if conf == SlotConfidence.UNKNOWN:
+                missing.append(name)
+        return missing
+
+    def is_complete(self) -> bool:
+        return len(self.missing_slots()) == 0
+
+
+class ConciergeTurnResponse(BaseModel):
+    """Structured output from one concierge turn."""
+    acknowledgment: str = Field(..., description="Brief empathetic reflection on what the user said")
+    updated_slots: PartialSleepSlots = Field(default_factory=PartialSleepSlots)
+    slot_confidence: dict[str, SlotConfidence] = Field(default_factory=dict)
+    follow_up: Optional[str] = Field(None, description="Single contextual question, or null when complete")
+    is_complete: bool = False
+    curiosity_note: Optional[str] = Field(None, description="Optional context to save in notes")

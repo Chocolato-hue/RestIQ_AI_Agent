@@ -395,6 +395,16 @@ def format_coaching_message(coaching: CoachingResult) -> str:
     Deterministic hardcoded template. Always available, zero external
     dependencies. Used as the fallback when Gemini is unavailable.
     """
+    return format_coaching_message_conversational(coaching)
+
+
+def format_coaching_message_conversational(
+    coaching: CoachingResult,
+    user_context: str = "",
+) -> str:
+    """
+    Formats CoachingResult with a warmer, conversation-aware tone.
+    """
     debt_emoji = {
         "NONE": "🟢",
         "MILD": "🟡",
@@ -404,8 +414,15 @@ def format_coaching_message(coaching: CoachingResult) -> str:
 
     tips_text = "\n".join(f"  {i+1}. {t}" for i, t in enumerate(coaching.personalized_tips))
 
+    opener = ""
+    if user_context.strip():
+        opener = f"{user_context.strip()}\n\n"
+
+    insight_header = "" if opener else "Here's what I'm seeing 👀\n\n"
+
     return (
-        f"Here's what I'm seeing 👀\n\n"
+        f"{opener}"
+        f"{insight_header}"
         f"{coaching.primary_insight}\n\n"
         f"*Tonight's plan:*\n"
         f"  • Last coffee by {coaching.caffeine_cutoff}\n"
@@ -451,20 +468,23 @@ science. No headers, no bullet lists, no citations. Use 1-2 emoji max.
     return text
 
 
-def get_coaching_message(coaching: CoachingResult) -> str:
+def get_coaching_message(coaching: CoachingResult, user_context: str = "") -> str:
     """
     Public entry point for the user-facing coaching message.
 
     Tries Gemini first for a conversational tone. On ANY failure — quota
     exceeded, rate limit, network error, missing API key, empty response —
-    silently falls back to the deterministic hardcoded template so a
-    check-in never breaks. This is the function pipeline.py should call.
+    silently falls back to the deterministic template so a check-in never
+    breaks.
     """
     try:
-        return _format_coaching_message_llm(coaching)
+        text = _format_coaching_message_llm(coaching)
+        if user_context.strip():
+            return f"{user_context.strip()}\n\n{text}"
+        return text
     except Exception as e:
         logger.warning("[SLEEP_COACH] Gemini coaching message failed, using fallback template: %s", e)
-        return format_coaching_message(coaching)
+        return format_coaching_message_conversational(coaching, user_context)
 
 
 if __name__ == "__main__":
