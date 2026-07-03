@@ -10,11 +10,10 @@ from pydantic import BaseModel, Field
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Enums
+# Enums (unchanged)
 # ──────────────────────────────────────────────────────────────────────────────
 
 class SleepQuality(str, Enum):
-    """Quality of sleep rating."""
     POOR = "POOR"
     FAIR = "FAIR"
     GOOD = "GOOD"
@@ -22,7 +21,6 @@ class SleepQuality(str, Enum):
 
 
 class MoodOnWake(str, Enum):
-    """Mood upon waking up."""
     TERRIBLE = "TERRIBLE"
     TIRED = "TIRED"
     OKAY = "OKAY"
@@ -31,7 +29,6 @@ class MoodOnWake(str, Enum):
 
 
 class VerdictLabel(str, Enum):
-    """Overall sleep health verdict label."""
     NEEDS_ATTENTION = "NEEDS_ATTENTION"
     IMPROVING = "IMPROVING"
     ON_TRACK = "ON_TRACK"
@@ -39,14 +36,12 @@ class VerdictLabel(str, Enum):
 
 
 class CaffeineSensitivity(str, Enum):
-    """Caffeine sensitivity level of the user."""
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
 
 class PlanStatus(str, Enum):
-    """Direction of the user's sleep trend relative to their current plan."""
     IMPROVING = "IMPROVING"
     DECLINING = "DECLINING"
     STABLE = "STABLE"
@@ -124,29 +119,25 @@ class SleepEntrySchema(BaseModel):
 class UserProfileSchema(BaseModel):
     """
     Represents user preferences, goals, and tracking statistics.
-
-    Used by:
-    - Profile Agent: To manage, retrieve, and update user settings and check-in metrics.
-    - Intake/Analyzer/Circadian Agents: To retrieve user goals (e.g., target wake time)
-      and caffeine sensitivity to contextualize feedback.
-
-    MCP Tool connections:
-    - UserProfileMCP: Connects to `get_user_profile` (to read profile data) and
-      `update_profile_stats` (to update check-in streak and total entry counts).
+    Age is now included for personalized CDC/AASM sleep recommendations.
     """
     user_id: str = Field(..., description="Unique identifier for the user")
     username: str = Field(..., description="Username of the user")
+    age_years: Optional[float] = Field(
+        default=None, ge=0, le=130,
+        description="User's age in years. Used for age-specific sleep duration guidelines."
+    )
     target_wake_time: str = Field(..., description="Desired wake time in HH:MM format")
-    target_bedtime: str = Field(default="23:00", description="Current plan's target bedtime in HH:MM format, adjusted over time based on progress")
+    target_bedtime: str = Field(default="23:00", description="Current plan's target bedtime")
     target_sleep_duration: float = Field(default=8.0, description="Target sleep duration in hours")
-    caffeine_sensitivity: CaffeineSensitivity = Field(default=CaffeineSensitivity.MEDIUM, description="User sensitivity level to caffeine")
-    check_in_streak: int = Field(default=0, ge=0, description="Current consecutive day check-in streak")
-    total_entries: int = Field(default=0, ge=0, description="Total number of logged sleep entries")
-    plan_status: PlanStatus = Field(default=PlanStatus.INSUFFICIENT_DATA, description="Current direction of the user's sleep trend relative to their plan")
-    plan_updated_at: Optional[datetime] = Field(None, description="Timestamp when the plan target was last adjusted")
-    telegram_chat_id: Optional[str] = Field(None, description="Linked Telegram chat ID for delivering check-in prompts and reports as notifications. None if not yet linked.")
-    telegram_linked_at: Optional[datetime] = Field(None, description="Timestamp when the Telegram account was linked, if applicable")
-    preferred_checkin_time: Optional[str] = Field(None, description="Preferred daily check-in notification time in HH:MM (24-hour) format. None means no notification scheduled yet.")
+    caffeine_sensitivity: CaffeineSensitivity = Field(default=CaffeineSensitivity.MEDIUM)
+    check_in_streak: int = Field(default=0, ge=0)
+    total_entries: int = Field(default=0, ge=0)
+    plan_status: PlanStatus = Field(default=PlanStatus.INSUFFICIENT_DATA)
+    plan_updated_at: Optional[datetime] = Field(None)
+    telegram_chat_id: Optional[str] = Field(None)
+    telegram_linked_at: Optional[datetime] = Field(None)
+    preferred_checkin_time: Optional[str] = Field(None)
     created_at: datetime = Field(..., description="Timestamp when the user profile was created")
 
 

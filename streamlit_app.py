@@ -227,8 +227,14 @@ with tab_checkin:
 
     latest_entry = run_get_latest(user_id)
 
-    if "checkin_session" not in st.session_state:
-        session, _opener = concierge_agent.start_session(user_id, latest_entry)
+        if "checkin_session" not in st.session_state:
+        try:
+            profile = profile_tool.get_user_profile(user_id)
+            age = profile.age_years
+        except:
+            age = None
+            
+        session, _opener = concierge_agent.start_session(user_id, latest_entry, age_years=age)
         st.session_state.checkin_session = concierge_agent.session_to_dict(session)
         st.session_state.checkin_analyzed = False
         st.session_state.checkin_result = None
