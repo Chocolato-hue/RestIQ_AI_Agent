@@ -40,6 +40,7 @@ from tools import profile as profile_tool
 st.set_page_config(page_title="RestIQ", page_icon="🌙", layout="centered")
 
 BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "your_restiq_bot")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +138,28 @@ with st.sidebar:
     telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
     st.link_button("📲 Connect Telegram", telegram_link)
     st.caption("Links your account so you receive daily check-ins and weekly reports in Telegram.")
+
+    # ── Age input (persistent, one-time) ─────────────────────────────────────
+    st.divider()
+    st.markdown("#### 🎂 Your Age")
+    _stored_age = profile_tool.get_user_age(user_id)
+    _age_input = st.number_input(
+        "Age (years)",
+        min_value=0.0,
+        max_value=130.0,
+        value=float(_stored_age) if _stored_age is not None else 25.0,
+        step=1.0,
+        help="Used to compare your sleep against CDC/AASM guidelines for your age group.",
+        key="sidebar_age_input",
+    )
+    if st.button("Save age", key="save_age_btn", use_container_width=True):
+        try:
+            profile_tool.update_user_age(user_id, _age_input)
+            st.success(f"✅ Age saved ({_age_input:.0f} yrs)")
+        except ValueError as _e:
+            st.error(f"⚠️ {_e}")
+    if _stored_age is not None:
+        st.caption(f"Saved: {_stored_age:.0f} years")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
@@ -573,6 +596,29 @@ with tab_report:
                         with st.container(border=True):
                             st.metric("🔥 Streak", f"{analysis.streak_days} days")
 
+                    # ── Age-Based Guideline Comparison ──
+                    _stored_age = profile_tool.get_user_age(user_id)
+                    if _stored_age is not None:
+                        from tools.sleep_guideline import evaluate_duration_against_guideline
+                        try:
+                            _guideline = evaluate_duration_against_guideline(_stored_age, analysis.average_duration)
+                            _verdict_str = _guideline["verdict"].value if hasattr(_guideline["verdict"], "value") else str(_guideline["verdict"])
+                            _badge = "🟢 Within Range" if _guideline["within_range"] else ("🔴 Below Range" if _verdict_str == "NEEDS_ATTENTION" else "🟡 Above Range")
+                            
+                            st.markdown("#### 💤 Age-Based Guideline Comparison")
+                            with st.container(border=True):
+                                gcol1, gcol2 = st.columns([2, 1])
+                                with gcol1:
+                                    st.markdown(f"**Group:** {_guideline['age_band']}")
+                                    st.markdown(f"**Recommended:** {_guideline['recommended_min_hours']}–{_guideline['recommended_max_hours']} hours/night")
+                                with gcol2:
+                                    st.markdown(f"**Status:**\n\n### {_badge}")
+                                
+                                st.info(_guideline["note"])
+                                st.caption(f"Source: {_guideline['source']}")
+                        except Exception as _e:
+                            st.caption(f"Failed to load sleep guideline: {_e}")
+
                     st.write("")
 
                     if history_count < 7:
@@ -768,13 +814,88 @@ with tab_report:
                     st.write("")
                     st.success(f"🏆 {report.milestone_message}")
 
+            except ValueError as _ve:
+                st.warning(f"⚠️ {_ve}")
+                st.info(
+                    "**How to log more sleep:**\n"
+                    "- Use the **Check-in tab** above and click *Analyze my sleep*, or\n"
+                    "- Send `/checkin` to your RestIQ Telegram bot."
+                )
             except Exception:
                 st.error("Couldn't generate the weekly report right now.")
                 st.info(
-                    "This may happen if there are no sleep entries yet. "
-                    "Add at least one check-in, and for best results use 7 daily entries."
+                    "The AI service may be temporarily unavailable. "
+                    "Add at least 3 check-ins and try again."
                 )
                 st.caption("Technical details are available in the terminal logs.")
+
+    # ── Send to Telegram / Download ──────────────────────────────────────────
+    st.write("")
+    st.markdown("### 📤 Share Your Report")
+    with st.container(border=True):
+        _chat_id = profile_tool.get_telegram_chat_id(user_id)
+        _chart_path = f"/tmp/restiq_report_{user_id}.png"
+        _chart_exists = os.path.exists(_chart_path)
+
+        if _chat_id:
+            st.caption(f"📬 Linked to Telegram chat `{_chat_id}`")
+            if st.button("📲 Send to Telegram", type="primary", use_container_width=True, key="send_telegram_report"):
+                if not _chart_exists:
+                    st.warning(
+                        "No report chart found. Please click **Generate weekly report** first."
+                    )
+                elif not TELEGRAM_BOT_TOKEN:
+                    st.error("TELEGRAM_BOT_TOKEN is not configured. Check your .env file.")
+                else:
+                    with st.spinner("Sending to Telegram..."):
+                        try:
+                            import requests as _req
+                            _tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+                            # Send chart image
+                            with open(_chart_path, "rb") as _f:
+                                _resp = _req.post(
+                                    f"{_tg_url}/sendPhoto",
+                                    data={"chat_id": _chat_id, "caption": "📊 Your weekly RestIQ sleep report chart."},
+                                    files={"photo": _f},
+                                    timeout=15,
+                                )
+                            if not _resp.ok:
+                                raise RuntimeError(f"Telegram API error: {_resp.text}")
+                            st.success("✅ Chart sent to Telegram!")
+                        except ValueError as _e:
+                            st.warning(f"⚠️ {_e}")
+                            st.info(
+                                "Log at least 3 sleep entries via **/checkin** in Telegram "
+                                "or the Check-in tab above, then try again."
+                            )
+                        except Exception as _e:
+                            st.error(f"❌ Could not send to Telegram: {_e}")
+                            st.caption("Check that your bot token and chat ID are correct.")
+        else:
+            telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
+            st.info(
+                "**Telegram not connected.**\n\n"
+                "Link your account to send reports directly to your Telegram chat."
+            )
+            st.link_button("📲 Connect Telegram", telegram_link, type="primary")
+            st.caption(
+                "After clicking, open Telegram and tap **Start**. "
+                "New to Telegram? Log in at web.telegram.org first."
+            )
+
+        st.write("")
+        if _chart_exists:
+            with open(_chart_path, "rb") as _dl_f:
+                st.download_button(
+                    label="⬇️ Download Chart as PNG",
+                    data=_dl_f,
+                    file_name=f"restiq_weekly_report_{user_id}.png",
+                    mime="image/png",
+                    use_container_width=True,
+                    key="download_report_png",
+                )
+        else:
+            st.caption("Generate the weekly report above to enable download.")
 
 # ── Tab 3: Plan History ──────────────────────────────────────────────────────
 

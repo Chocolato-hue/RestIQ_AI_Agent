@@ -68,6 +68,30 @@ def init_db() -> None:
     _ensure_column("users", "telegram_chat_id", "TEXT", "NULL")
     _ensure_column("users", "telegram_linked_at", "TEXT", "NULL")
     _ensure_column("users", "preferred_checkin_time", "TEXT", "NULL")
+    _ensure_column("users", "age_years", "REAL", "NULL")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sleep_assessments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        age_years REAL,
+        avg_hours REAL,
+        age_band TEXT,
+        recommended_min_hours REAL,
+        recommended_max_hours REAL,
+        within_range INTEGER,
+        verdict TEXT,
+        note TEXT,
+        source TEXT,
+        analyzed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
+    )
+    """)
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sleep_assessments_analyzed_at "
+        "ON sleep_assessments(analyzed_at)"
+    )
 
     conn.commit()
     conn.close()

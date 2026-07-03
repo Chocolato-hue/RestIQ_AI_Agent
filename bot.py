@@ -233,6 +233,14 @@ async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         logger.info("[BOT] Weekly report sent to user_id: %s", user_id)
+        
+    except ValueError as e:
+        logger.warning("[BOT] Not enough data for weekly report user_id=%s: %s", user_id, str(e))
+        await update.message.reply_text(
+            "📊 Not enough sleep data to generate a report yet.\n\n"
+            f"{e}\n\n"
+            "Use /checkin to log your sleep and try again once you have at least 3 entries."
+        )
 
     except ValueError as e:
         logger.warning("[BOT] Weekly report validation failed: %s", str(e))
