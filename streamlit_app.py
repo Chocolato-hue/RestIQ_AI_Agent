@@ -18,6 +18,7 @@ import sys, os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 import re
+import datetime
 import streamlit as st
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
@@ -26,7 +27,7 @@ load_dotenv(override=True)
 
 GEMINI_CONFIGURED = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
 
-from pipeline import run_checkin, run_weekly_report
+from pipeline import run_checkin, run_weekly_report, run_backfill_checkin
 from agents.tracker import run_get_history, run_get_latest
 from agents.scheduler import run_evaluate_plan
 from agents import concierge as concierge_agent
@@ -386,6 +387,102 @@ with tab_checkin:
         st.session_state.checkin_result = None
         st.session_state.checkin_analysis = None
         st.rerun()
+
+    st.divider()
+    st.markdown("### 🗓️ Add Missed Check-in")
+    st.caption("Forgot to log a previous night? Add it here so your weekly report has complete data.")
+
+    with st.container(border=True):
+        missed_date = st.date_input(
+            "Select missed sleep date",
+            max_value=datetime.date.today(),
+            key="missed_date",
+        )
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+            bedtime = st.text_input("Bedtime", value="23:00", key="missed_bedtime")
+            sleep_quality = st.selectbox(
+                "Sleep quality",
+                ["POOR", "FAIR", "GOOD", "EXCELLENT"],
+                index=2,
+                key="missed_sleep_quality",
+            )
+            wake_up_count = st.number_input(
+                "Wake-ups",
+                min_value=0,
+                max_value=10,
+                value=1,
+                step=1,
+                key="missed_wakeups",
+            )
+            focus_level = st.slider("Focus level", 1, 5, 3, key="missed_focus")
+
+        with c2:
+            wake_time = st.text_input("Wake time", value="07:00", key="missed_wake")
+            mood_on_wake = st.selectbox(
+                "Mood on wake",
+                ["TERRIBLE", "TIRED", "OKAY", "GOOD", "GREAT"],
+                index=3,
+                key="missed_mood",
+            )
+            sleep_duration = st.number_input(
+                "Sleep duration (hours)",
+                min_value=0.0,
+                max_value=14.0,
+                value=8.0,
+                step=0.5,
+                key="missed_duration",
+            )
+            energy_level = st.slider("Energy level", 1, 5, 3, key="missed_energy")
+
+        caffeine_after_2pm = st.checkbox("Caffeine after 2 PM", key="missed_caffeine")
+        exercise_today = st.checkbox("Exercised that day", key="missed_exercise")
+        screen_time_before_bed = st.checkbox("Screen time before bed", key="missed_screen")
+
+        notes = st.text_area(
+            "Notes",
+            placeholder="Optional: phone use, stress, late dinner, noise, etc.",
+            height=80,
+            key="missed_notes",
+        )
+
+        if st.button("Save missed check-in", use_container_width=True):
+            with st.spinner("Saving missed check-in..."):
+                try:
+                    result = run_backfill_checkin(
+                        user_id=user_id,
+                        selected_date=missed_date,
+                        bedtime=bedtime,
+                        wake_time=wake_time,
+                        sleep_duration=sleep_duration,
+                        wake_up_count=wake_up_count,
+                        sleep_quality=sleep_quality,
+                        mood_on_wake=mood_on_wake,
+                        caffeine_after_2pm=caffeine_after_2pm,
+                        exercise_today=exercise_today,
+                        screen_time_before_bed=screen_time_before_bed,
+                        focus_level=focus_level,
+                        energy_level=energy_level,
+                        notes=notes,
+                    )
+
+                    entry = result["entry"]
+
+                    st.success("✅ Missed check-in added successfully!")
+                    st.markdown(
+                        f"""
+📅 **Date:** {entry.date}
+
+⭐ **Sleep Score:** {entry.score}/100
+
+🛌 **Duration:** {entry.sleep_duration} hours
+"""
+                    )
+
+                except Exception as e:
+                    st.error(f"Could not save missed check-in: {e}")
 
 # ── Tab 2: Weekly Report ─────────────────────────────────────────────────────
 
