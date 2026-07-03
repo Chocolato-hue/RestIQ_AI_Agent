@@ -186,6 +186,51 @@ def run_weekly_report(user_id: str) -> dict:
     return RestIQPipeline().handle_weekly_report(user_id)
 
 
+def run_backfill_checkin(
+    user_id: str,
+    selected_date,
+    bedtime: str,
+    wake_time: str,
+    sleep_duration: float,
+    wake_up_count: int,
+    sleep_quality: str,
+    mood_on_wake: str,
+    caffeine_after_2pm: bool,
+    exercise_today: bool,
+    screen_time_before_bed: bool,
+    focus_level: int,
+    energy_level: int,
+    notes: str = "",
+) -> dict:
+    entry = SleepEntrySchema(
+        user_id=user_id,
+        date=selected_date,
+        bedtime=bedtime,
+        wake_time=wake_time,
+        sleep_duration=sleep_duration,
+        wake_up_count=wake_up_count,
+        sleep_quality=sleep_quality,
+        mood_on_wake=mood_on_wake,
+        caffeine_after_2pm=caffeine_after_2pm,
+        exercise_today=exercise_today,
+        screen_time_before_bed=screen_time_before_bed,
+        focus_level=focus_level,
+        energy_level=energy_level,
+        notes=notes,
+    )
+
+    score_val = compute_sleep_score(entry)
+    entry = entry.model_copy(update={"score": score_val})
+
+    store_success = run_store(entry)
+    if not store_success:
+        raise ValueError("Could not save missed check-in.")
+
+    return {
+        "entry": entry,
+        "message": f"Missed check-in saved for {selected_date} with score {score_val}/100.",
+    }
+
 def run_daily_prompt(user_id: str, latest_entry: SleepEntrySchema = None) -> str:
     return RestIQPipeline().handle_daily_prompt(user_id, latest_entry)
 

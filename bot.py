@@ -216,19 +216,11 @@ async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TY
 
         report_res = await asyncio.to_thread(run_weekly_report, user_id)
         chart_path = report_res["chart_path"]
-        logger.info("[BOT] chart_path=%s exists=%s", chart_path, os.path.exists(chart_path) if chart_path else False)
 
         if chart_path and os.path.exists(chart_path):
             try:
-                ext = os.path.splitext(chart_path)[1].lower()
-
-                if ext in [".png", ".jpg", ".jpeg", ".webp"]:
-                    with open(chart_path, "rb") as photo:
-                        await update.message.reply_photo(photo=photo)
-                else:
-                    with open(chart_path, "rb") as document:
-                        await update.message.reply_document(document=document)
-
+                with open(chart_path, "rb") as photo:
+                    await update.message.reply_photo(photo=photo)
             except Exception as img_error:
                 logger.warning("[BOT] Could not send chart file: %s", str(img_error))
                 await update.message.reply_text(
@@ -250,10 +242,20 @@ async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TY
             "Use /checkin to log your sleep and try again once you have at least 3 entries."
         )
 
+    except ValueError as e:
+        logger.warning("[BOT] Weekly report validation failed: %s", str(e))
+        await update.message.reply_text(
+            "📊 Not enough sleep data yet.\n\n"
+            "Please log your sleep first using /checkin.\n\n"
+            "For a better weekly report, log at least 3 nights of sleep so RestIQ can detect useful trends."
+        )
+
     except Exception as e:
         logger.error("[BOT] Error generating weekly report: %s", str(e), exc_info=True)
-        await update.message.reply_text(f"❌ Failed to generate weekly report: {e}")
-
+        await update.message.reply_text(
+            "❌ Something went wrong while generating your weekly report.\n\n"
+            "Please try again later."
+        )
 
 async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (

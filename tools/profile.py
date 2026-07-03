@@ -64,7 +64,6 @@ def get_user_profile(user_id: str) -> UserProfileSchema:
         raise ValueError(f"User {user_id} not found")
     return UserProfileSchema(**dict(row))
 
-
 def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
     logger.info("[PROFILE] link_telegram user_id=%s chat_id=%s", user_id, telegram_chat_id)
     if not user_id or not telegram_chat_id:
@@ -72,10 +71,22 @@ def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    linked_at = datetime.datetime.now()
+
     cursor.execute("SELECT telegram_chat_id FROM users WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
-    already_linked = bool(row and row[0])
-    linked_at = datetime.datetime.now()
+    already_linked = bool(row and row[0] == telegram_chat_id)
+
+    # Ensure one Telegram chat is linked to only one RestIQ user.
+    cursor.execute(
+        """
+        UPDATE users
+        SET telegram_chat_id = NULL, telegram_linked_at = NULL
+        WHERE telegram_chat_id = ? AND user_id != ?
+        """,
+        (telegram_chat_id, user_id),
+    )
 
     if row is None:
         cursor.execute(
@@ -106,7 +117,9 @@ def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
     else:
         cursor.execute(
             """
-            UPDATE users SET telegram_chat_id = ?, telegram_linked_at = ? WHERE user_id = ?
+            UPDATE users
+            SET telegram_chat_id = ?, telegram_linked_at = ?
+            WHERE user_id = ?
             """,
             (telegram_chat_id, linked_at.isoformat(), user_id),
         )
