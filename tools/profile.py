@@ -3,9 +3,9 @@
 import datetime
 import logging
 import sqlite3
+from typing import Optional
 
 from schemas import PlanStatus, TelegramLinkSchema, UserProfileSchema
-
 from db.sqlite import DB_FILE
 
 logger = logging.getLogger("tools.profile")
@@ -15,8 +15,9 @@ def register_user(
     user_id: str,
     username: str,
     target_wake_time: str = "07:00",
+    age_years: Optional[float] = None,
 ) -> UserProfileSchema:
-    logger.info("[PROFILE] register_user user_id=%s username=%s", user_id, username)
+    logger.info("[PROFILE] register_user user_id=%s username=%s age=%s", user_id, username, age_years)
     if not user_id or not user_id.strip():
         raise ValueError("user_id must be a non-empty string.")
 
@@ -30,24 +31,13 @@ def register_user(
         INSERT OR IGNORE INTO users (
             user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
             caffeine_sensitivity, check_in_streak, total_entries, plan_status, plan_updated_at,
-            telegram_chat_id, telegram_linked_at, preferred_checkin_time, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            telegram_chat_id, telegram_linked_at, preferred_checkin_time, created_at, age_years
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            user_id,
-            username,
-            target_wake_time,
-            "23:00",
-            8.0,
-            "MEDIUM",
-            0,
-            0,
-            PlanStatus.INSUFFICIENT_DATA.value,
-            None,
-            None,
-            None,
-            None,
-            created_at,
+            user_id, username, target_wake_time, "23:00", 8.0,
+            "MEDIUM", 0, 0, PlanStatus.INSUFFICIENT_DATA.value, None,
+            None, None, None, created_at, age_years
         ),
     )
     conn.commit()
@@ -57,24 +47,22 @@ def register_user(
     conn.close()
 
     if not row:
-        raise ValueError(f"Failed to create or find user profile for user_id '{user_id}'.")
+        raise ValueError(f"Failed to create profile for {user_id}")
 
-    return UserProfileSchema(
-        user_id=row["user_id"],
-        username=row["username"],
-        target_wake_time=row["target_wake_time"],
-        target_bedtime=row["target_bedtime"],
-        target_sleep_duration=row["target_sleep_duration"],
-        caffeine_sensitivity=row["caffeine_sensitivity"],
-        check_in_streak=row["check_in_streak"],
-        total_entries=row["total_entries"],
-        plan_status=row["plan_status"],
-        plan_updated_at=row["plan_updated_at"],
-        telegram_chat_id=row["telegram_chat_id"],
-        telegram_linked_at=row["telegram_linked_at"],
-        preferred_checkin_time=row["preferred_checkin_time"],
-        created_at=row["created_at"],
-    )
+    return UserProfileSchema(**dict(row))
+
+
+def get_user_profile(user_id: str) -> UserProfileSchema:
+    """Return full profile including age."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"User {user_id} not found")
+    return UserProfileSchema(**dict(row))
 
 
 def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
