@@ -1,6 +1,7 @@
 """Sleep pattern analysis shared by analyzer and reporter tools."""
 
 from schemas import SleepAnalysisSchema, SleepEntrySchema, VerdictLabel
+from tools.sleep_guideline import evaluate_duration_against_guideline
 
 
 def build_sleep_analysis(
@@ -8,6 +9,7 @@ def build_sleep_analysis(
     period_days: int,
     entries: list[SleepEntrySchema],
     streak_days: int,
+    age_years: float | None = None,
 ) -> SleepAnalysisSchema:
     scores = [e.score for e in entries]
     durations = [e.sleep_duration for e in entries]
@@ -89,6 +91,34 @@ def build_sleep_analysis(
         patterns_detected.append("Your sleep metrics are currently stable.")
     if not recommendations:
         recommendations.append("Maintain consistency in bedtime and waking hours.")
+
+    # ── Age-based guideline check (CDC/AASM) ──────────────────────────────────
+    if age_years is not None:
+        try:
+            guideline_result = evaluate_duration_against_guideline(
+                age_years=age_years,
+                average_duration_hours=average_duration,
+            )
+            patterns_detected.append(guideline_result["note"])
+            verdict_str = (
+                guideline_result["verdict"].value
+                if hasattr(guideline_result["verdict"], "value")
+                else str(guideline_result["verdict"])
+            )
+            if verdict_str == "NEEDS_ATTENTION":
+                recommendations.append(
+                    f"Your average sleep is below the {guideline_result['recommended_min_hours']}–"
+                    f"{guideline_result['recommended_max_hours']}h range recommended for "
+                    f"{guideline_result['age_band'].lower()}. "
+                    "Try going to bed 20–30 minutes earlier each night."
+                )
+            elif verdict_str == "IMPROVING" and guideline_result["recommended_max_hours"] < average_duration:
+                recommendations.append(
+                    f"Your average sleep slightly exceeds the {guideline_result['recommended_max_hours']}h "
+                    "upper limit. If you still feel tired, consider a sleep quality review."
+                )
+        except Exception:  # noqa: BLE001 — guideline enrichment is best-effort
+            pass
 
     return SleepAnalysisSchema(
         user_id=user_id,
