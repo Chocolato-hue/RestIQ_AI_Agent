@@ -41,7 +41,17 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
     conn.close()
 
     if not rows:
-        raise ValueError(f"No sleep entries found to generate report for user {user_id}")
+        raise ValueError(
+            "No sleep entries found. Please log at least 3 nights of sleep first. "
+            "Use /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
+        )
+
+    if len(rows) < 3:
+        raise ValueError(
+            f"You only have {len(rows)} sleep entr{'y' if len(rows) == 1 else 'ies'} recorded. "
+            "A minimum of 3 entries is required to generate a meaningful weekly report. "
+            "Please log more sleep via /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
+        )
 
     rows_sorted = sorted(rows, key=lambda r: r["date"])
     dates = [r["date"] for r in rows_sorted]
