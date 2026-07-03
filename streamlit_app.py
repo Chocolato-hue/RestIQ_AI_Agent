@@ -227,7 +227,7 @@ with tab_checkin:
 
     latest_entry = run_get_latest(user_id)
 
-        if "checkin_session" not in st.session_state:
+    if "checkin_session" not in st.session_state:
         try:
             profile = profile_tool.get_user_profile(user_id)
             age = profile.age_years
