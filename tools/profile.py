@@ -145,3 +145,89 @@ def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
         already_linked=already_linked,
         linked_at=linked_at,
     )
+
+
+def get_telegram_chat_id(user_id: str) -> str | None:
+    """Return the linked Telegram chat_id for *user_id*, or None if not linked."""
+    logger.debug("[PROFILE] get_telegram_chat_id user_id=%s", user_id)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT telegram_chat_id FROM users WHERE user_id = ?", (user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0]:
+        return str(row[0])
+    return None
+
+
+def get_user_age(user_id: str) -> float | None:
+    """Return the stored age_years for *user_id*, or None if not yet provided."""
+    logger.debug("[PROFILE] get_user_age user_id=%s", user_id)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT age_years FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0] is not None:
+        return float(row[0])
+    return None
+
+
+def update_user_age(user_id: str, age_years: float) -> None:
+    """Persist *age_years* to the users row for *user_id*."""
+    if age_years < 0 or age_years > 130:
+        raise ValueError(f"age_years must be between 0 and 130, got {age_years}.")
+    logger.info("[PROFILE] update_user_age user_id=%s age_years=%s", user_id, age_years)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET age_years = ? WHERE user_id = ?", (age_years, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def store_sleep_assessment(user_id: str, assessment: dict) -> None:
+    """Persist a guideline assessment record to *sleep_assessments*.
+
+    *assessment* must be the dict returned by
+    ``tools.sleep_guideline.evaluate_duration_against_guideline()``,
+    enriched with ``avg_hours`` and ``analyzed_at`` by the caller.
+    VerdictLabel values must already be serialised to strings before calling.
+    """
+    import datetime as _dt
+
+    logger.info("[PROFILE] store_sleep_assessment user_id=%s verdict=%s", user_id, assessment.get("verdict"))
+    verdict = assessment.get("verdict", "")
+    if hasattr(verdict, "value"):
+        verdict = verdict.value
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO sleep_assessments (
+            user_id, age_years, avg_hours, age_band,
+            recommended_min_hours, recommended_max_hours,
+            within_range, verdict, note, source, analyzed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            assessment.get("age_years"),
+            assessment.get("avg_hours"),
+            assessment.get("age_band"),
+            assessment.get("recommended_min_hours"),
+            assessment.get("recommended_max_hours"),
+            int(bool(assessment.get("within_range", False))),
+            verdict,
+            assessment.get("note"),
+            assessment.get("source"),
+            assessment.get("analyzed_at", _dt.datetime.now().isoformat()),
+        ),
+    )
+    conn.commit()
+    conn.close()
+

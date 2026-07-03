@@ -11,6 +11,7 @@ from tools.analysis import build_sleep_analysis
 from db.sqlite import DB_FILE
 from db.entries import ensure_entry_scores, row_to_entry
 from tools.scoring import compute_sleep_score
+from tools.profile import get_user_age
 
 logger = logging.getLogger("tools.reporting")
 
@@ -42,14 +43,15 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
 
     if not rows:
         raise ValueError(
-            "No sleep entries found.\n\n"
-            "Please log your sleep using /checkin before generating a weekly report."
+            "No sleep entries found. Please log at least 3 nights of sleep first. "
+            "Use /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
         )
 
     if len(rows) < 3:
         raise ValueError(
-            f"Not enough sleep data yet ({len(rows)}/3 nights).\n\n"
-            "Please log at least 3 nights of sleep before generating a weekly report."
+            f"You only have {len(rows)} sleep entr{'y' if len(rows) == 1 else 'ies'} recorded. "
+            "A minimum of 3 entries is required to generate a meaningful weekly report. "
+            "Please log more sleep via /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
         )
 
     rows_sorted = sorted(rows, key=lambda r: r["date"])
@@ -137,7 +139,8 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
         with open(chart_path, "wb") as f:
             f.write(b"MOCK_PNG_DATA")
 
-    analysis = build_sleep_analysis(user_id, 7, entries, check_in_streak)
+    age_years = get_user_age(user_id)
+    analysis = build_sleep_analysis(user_id, 7, entries, check_in_streak, age_years=age_years)
 
     milestones = [7, 14, 30, 60, 90]
     milestone_message = None

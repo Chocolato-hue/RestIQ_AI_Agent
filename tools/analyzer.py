@@ -8,6 +8,7 @@ from schemas import SleepAnalysisSchema, SleepEntrySchema
 from tools.analysis import build_sleep_analysis
 from db.sqlite import DB_FILE
 from db.entries import fetch_recent_entries
+from tools.profile import get_user_age
 
 logger = logging.getLogger("tools.analyzer")
 
@@ -26,5 +27,6 @@ def analyze_patterns(user_id: str, days: int = 7) -> tuple[SleepAnalysisSchema, 
     conn.close()
     streak_days = user_row[0] if user_row else 0
 
-    analysis = build_sleep_analysis(user_id, days, entries, streak_days)
+    age_years = get_user_age(user_id)
+    analysis = build_sleep_analysis(user_id, days, entries, streak_days, age_years=age_years)
     return analysis, entries
