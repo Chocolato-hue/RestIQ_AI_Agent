@@ -23,6 +23,8 @@ from telegram.ext import (
 
 from pipeline import run_checkin, run_weekly_report, run_daily_prompt
 from agents.tracker import run_get_latest
+from agents import concierge as concierge_agent
+from agents.scheduler import SchedulerAgent
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -101,11 +103,61 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(welcome_text)
 
 
+async def _start_checkin_session(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: str,
+    *,
+    send_opener: bool = True,
+):
+    latest_entry = await asyncio.to_thread(run_get_latest, user_id)
+    scheduler = SchedulerAgent()
+    session_context = await asyncio.to_thread(scheduler.build_session_context, latest_entry)
+    session, opener = await asyncio.to_thread(
+        concierge_agent.start_session,
+        user_id,
+        latest_entry,
+        session_context,
+        send_opener,
+    )
+    context.user_data["checkin_session"] = concierge_agent.session_to_dict(session)
+    if send_opener:
+        await update.message.reply_text(opener)
+
+
+async def _process_checkin_turn(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: str,
+    message_text: str,
+):
+    session = concierge_agent.session_from_dict(context.user_data["checkin_session"])
+    session, reply = await asyncio.to_thread(
+        concierge_agent.process_turn, session, message_text
+    )
+    context.user_data["checkin_session"] = concierge_agent.session_to_dict(session)
+
+    if concierge_agent.is_complete(session):
+        await update.message.reply_text(reply)
+        await update.message.reply_text("⏳ Analyzing your sleep...")
+        transcript = concierge_agent.build_transcript(session)
+        checkin_res = await asyncio.to_thread(run_checkin, user_id, transcript)
+        await update.message.reply_text(checkin_res["reply_message"])
+        context.user_data.pop("checkin_session", None)
+        logger.info("[BOT] Check-in complete, score: %s", checkin_res["entry"].score)
+    else:
+        await update.message.reply_text(reply)
+
+
+def _wants_report(text: str) -> bool:
+    lowered = text.lower()
+    return any(kw in lowered for kw in ("report", "weekly", "progress", "trends", "how am i doing"))
+
+
 async def handle_checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    logger.info("[BOT] Awaiting check-in from user_id: %s", user_id)
-    await update.message.reply_text("🌙 Tell me about last night's sleep...")
-    context.user_data["awaiting_checkin"] = True
+    logger.info("[BOT] Starting check-in session for user_id: %s", user_id)
+    await _start_checkin_session(update, context, user_id)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,38 +166,82 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     logger.info("[BOT] Message received from %s", username)
 
-    if context.user_data.get("awaiting_checkin"):
-        await update.message.reply_text("⏳ Analyzing your sleep...")
+    if _wants_report(message_text) and not context.user_data.get("checkin_session"):
+        await handle_report_command(update, context)
+        return
+
+    session_data = context.user_data.get("checkin_session")
+
+    if session_data:
         try:
-            checkin_res = await asyncio.to_thread(run_checkin, user_id, message_text)
-            await update.message.reply_text(checkin_res["reply_message"])
-            context.user_data["awaiting_checkin"] = False
-            logger.info("[BOT] Check-in complete, score: %s", checkin_res["entry"].score)
+            await _process_checkin_turn(update, context, user_id, message_text)
         except Exception as e:
-            logger.error("[BOT] Error during run_checkin: %s", str(e), exc_info=True)
-            await update.message.reply_text(f"❌ Oops, I had trouble parsing that check-in: {e}")
+            logger.error("[BOT] Error during concierge turn: %s", str(e), exc_info=True)
+            await update.message.reply_text(f"❌ Oops, I had trouble with that: {e}")
     else:
         try:
             latest_entry = await asyncio.to_thread(run_get_latest, user_id)
-            prompt = await asyncio.to_thread(run_daily_prompt, user_id, latest_entry)
-            await update.message.reply_text(prompt)
-            context.user_data["awaiting_checkin"] = True
+            scheduler = SchedulerAgent()
+            session_context = await asyncio.to_thread(scheduler.build_session_context, latest_entry)
+            session, _opener = await asyncio.to_thread(
+                concierge_agent.start_session,
+                user_id,
+                latest_entry,
+                session_context,
+                False,
+            )
+            context.user_data["checkin_session"] = concierge_agent.session_to_dict(session)
+            await _process_checkin_turn(update, context, user_id, message_text)
         except Exception as e:
-            logger.error("[BOT] Error generating daily prompt: %s", str(e), exc_info=True)
-            await update.message.reply_text(f"❌ Error starting check-in sequence: {e}")
+            logger.error("[BOT] Error starting check-in session: %s", str(e), exc_info=True)
+            await update.message.reply_text(f"❌ Error starting check-in: {e}")
 
 
 async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    await update.message.reply_text("📊 Generating your weekly report...")
+    telegram_chat_id = str(update.effective_user.id)
+
     try:
+        conn = sqlite3.connect("sleep_data.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_id FROM users WHERE telegram_chat_id = ?",
+            (telegram_chat_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        user_id = row[0] if row else telegram_chat_id
+
+        await update.message.reply_text("📊 Generating your weekly report...")
+
         report_res = await asyncio.to_thread(run_weekly_report, user_id)
         chart_path = report_res["chart_path"]
+        logger.info("[BOT] chart_path=%s exists=%s", chart_path, os.path.exists(chart_path) if chart_path else False)
+
         if chart_path and os.path.exists(chart_path):
-            with open(chart_path, "rb") as photo:
-                await update.message.reply_photo(photo=photo)
-        await update.message.reply_text(report_res["telegram_message"])
+            try:
+                ext = os.path.splitext(chart_path)[1].lower()
+
+                if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+                    with open(chart_path, "rb") as photo:
+                        await update.message.reply_photo(photo=photo)
+                else:
+                    with open(chart_path, "rb") as document:
+                        await update.message.reply_document(document=document)
+
+            except Exception as img_error:
+                logger.warning("[BOT] Could not send chart file: %s", str(img_error))
+                await update.message.reply_text(
+                    "⚠️ Chart could not be sent, but here is your weekly summary:"
+                )
+
+        await update.message.reply_text(
+            report_res["telegram_message"],
+            parse_mode="Markdown"
+        )
+
         logger.info("[BOT] Weekly report sent to user_id: %s", user_id)
+        
     except ValueError as e:
         logger.warning("[BOT] Not enough data for weekly report user_id=%s: %s", user_id, str(e))
         await update.message.reply_text(
@@ -153,6 +249,7 @@ async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TY
             f"{e}\n\n"
             "Use /checkin to log your sleep and try again once you have at least 3 entries."
         )
+
     except Exception as e:
         logger.error("[BOT] Error generating weekly report: %s", str(e), exc_info=True)
         await update.message.reply_text(f"❌ Failed to generate weekly report: {e}")

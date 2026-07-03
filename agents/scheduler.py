@@ -5,9 +5,9 @@ import json
 import logging
 import datetime
 from datetime import date
+from typing import Optional
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 # Setup logging
@@ -119,30 +119,40 @@ class SchedulerAgent:
             triggered_by=triggered_by
         )
 
+    def build_session_context(self, latest_entry: SleepEntrySchema = None) -> Optional[str]:
+        """Build a short context hint for the concierge opener from prior sleep data."""
+        if not latest_entry:
+            return None
+
+        hints = []
+        if latest_entry.score is not None and latest_entry.score < 60:
+            hints.append(f"yesterday's score was {latest_entry.score}")
+        if latest_entry.screen_time_before_bed:
+            hints.append("late screens may have played a role")
+        if latest_entry.caffeine_after_2pm:
+            hints.append("late caffeine was a factor")
+        if latest_entry.wake_up_count > 2:
+            hints.append("you had several wake-ups")
+        if latest_entry.sleep_duration < 7:
+            hints.append("sleep was under 7 hours")
+
+        if not hints:
+            if latest_entry.score and latest_entry.score >= 85:
+                return "You had a great sleep score yesterday — let's keep the momentum."
+            return None
+
+        return "Yesterday " + ", and ".join(hints[:2]) + "."
+
     def send_daily_checkin(self, bot, user_id: str, chat_id: str, latest_entry: SleepEntrySchema = None) -> str:
         """
-        Constructs the formatted check-in text containing core and triggered questions.
+        Returns a single conversational opener for the concierge check-in.
         """
         logger.info("[SCHEDULER] Sending daily check-in message to user_id '%s'", user_id)
-        
-        if latest_entry:
-            followup_schema = self.get_smart_followup(user_id, latest_entry)
-            questions = followup_schema.core_questions + followup_schema.followup_questions
-        else:
-            questions = [
-                "What time did you go to sleep and wake up?",
-                "How many times did you wake up?",
-                "How do you feel right now on a scale of 1-10?"
-            ]
-            
-        q_list = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
-        
-        message = (
-            "🌙 Good morning! Time for your RestIQ check-in.\n\n"
-            f"{q_list}\n\n"
-            "Reply naturally — I'll understand!"
-        )
-        return message
+
+        context = self.build_session_context(latest_entry)
+        if context:
+            return f"🌙 Good morning! {context.capitalize()} How did you sleep last night?"
+        return "🌙 Good morning! How did you sleep last night?"
 
 
 def run_circadian(wake_time: str, sleep_duration: float = 8.0) -> CircadianSchema:
