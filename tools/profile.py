@@ -132,3 +132,18 @@ def link_telegram(user_id: str, telegram_chat_id: str) -> TelegramLinkSchema:
         already_linked=already_linked,
         linked_at=linked_at,
     )
+
+
+def get_telegram_chat_id(user_id: str) -> str | None:
+    """Return the linked Telegram chat_id for *user_id*, or None if not linked."""
+    logger.debug("[PROFILE] get_telegram_chat_id user_id=%s", user_id)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT telegram_chat_id FROM users WHERE user_id = ?", (user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0]:
+        return str(row[0])
+    return None

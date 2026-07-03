@@ -36,6 +36,7 @@ from tools import profile as profile_tool
 st.set_page_config(page_title="RestIQ", page_icon="🌙", layout="centered")
 
 BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "your_restiq_bot")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -711,13 +712,88 @@ with tab_report:
                     st.write("")
                     st.success(f"🏆 {report.milestone_message}")
 
+            except ValueError as _ve:
+                st.warning(f"⚠️ {_ve}")
+                st.info(
+                    "**How to log more sleep:**\n"
+                    "- Use the **Check-in tab** above and click *Analyze my sleep*, or\n"
+                    "- Send `/checkin` to your RestIQ Telegram bot."
+                )
             except Exception:
                 st.error("Couldn't generate the weekly report right now.")
                 st.info(
-                    "This may happen if there are no sleep entries yet. "
-                    "Add at least one check-in, and for best results use 7 daily entries."
+                    "The AI service may be temporarily unavailable. "
+                    "Add at least 3 check-ins and try again."
                 )
                 st.caption("Technical details are available in the terminal logs.")
+
+    # ── Send to Telegram / Download ──────────────────────────────────────────
+    st.write("")
+    st.markdown("### 📤 Share Your Report")
+    with st.container(border=True):
+        _chat_id = profile_tool.get_telegram_chat_id(user_id)
+        _chart_path = f"/tmp/restiq_report_{user_id}.png"
+        _chart_exists = os.path.exists(_chart_path)
+
+        if _chat_id:
+            st.caption(f"📬 Linked to Telegram chat `{_chat_id}`")
+            if st.button("📲 Send to Telegram", type="primary", use_container_width=True, key="send_telegram_report"):
+                if not _chart_exists:
+                    st.warning(
+                        "No report chart found. Please click **Generate weekly report** first."
+                    )
+                elif not TELEGRAM_BOT_TOKEN:
+                    st.error("TELEGRAM_BOT_TOKEN is not configured. Check your .env file.")
+                else:
+                    with st.spinner("Sending to Telegram..."):
+                        try:
+                            import requests as _req
+                            _tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+                            # Send chart image
+                            with open(_chart_path, "rb") as _f:
+                                _resp = _req.post(
+                                    f"{_tg_url}/sendPhoto",
+                                    data={"chat_id": _chat_id, "caption": "📊 Your weekly RestIQ sleep report chart."},
+                                    files={"photo": _f},
+                                    timeout=15,
+                                )
+                            if not _resp.ok:
+                                raise RuntimeError(f"Telegram API error: {_resp.text}")
+                            st.success("✅ Chart sent to Telegram!")
+                        except ValueError as _e:
+                            st.warning(f"⚠️ {_e}")
+                            st.info(
+                                "Log at least 3 sleep entries via **/checkin** in Telegram "
+                                "or the Check-in tab above, then try again."
+                            )
+                        except Exception as _e:
+                            st.error(f"❌ Could not send to Telegram: {_e}")
+                            st.caption("Check that your bot token and chat ID are correct.")
+        else:
+            telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
+            st.info(
+                "**Telegram not connected.**\n\n"
+                "Link your account to send reports directly to your Telegram chat."
+            )
+            st.link_button("📲 Connect Telegram", telegram_link, type="primary")
+            st.caption(
+                "After clicking, open Telegram and tap **Start**. "
+                "New to Telegram? Log in at web.telegram.org first."
+            )
+
+        st.write("")
+        if _chart_exists:
+            with open(_chart_path, "rb") as _dl_f:
+                st.download_button(
+                    label="⬇️ Download Chart as PNG",
+                    data=_dl_f,
+                    file_name=f"restiq_weekly_report_{user_id}.png",
+                    mime="image/png",
+                    use_container_width=True,
+                    key="download_report_png",
+                )
+        else:
+            st.caption("Generate the weekly report above to enable download.")
 
 # ── Tab 3: Plan History ──────────────────────────────────────────────────────
 
