@@ -138,6 +138,28 @@ with st.sidebar:
     st.link_button("📲 Connect Telegram", telegram_link)
     st.caption("Links your account so you receive daily check-ins and weekly reports in Telegram.")
 
+    # ── Age input (persistent, one-time) ─────────────────────────────────────
+    st.divider()
+    st.markdown("#### 🎂 Your Age")
+    _stored_age = profile_tool.get_user_age(user_id)
+    _age_input = st.number_input(
+        "Age (years)",
+        min_value=0.0,
+        max_value=130.0,
+        value=float(_stored_age) if _stored_age is not None else 25.0,
+        step=1.0,
+        help="Used to compare your sleep against CDC/AASM guidelines for your age group.",
+        key="sidebar_age_input",
+    )
+    if st.button("Save age", key="save_age_btn", use_container_width=True):
+        try:
+            profile_tool.update_user_age(user_id, _age_input)
+            st.success(f"✅ Age saved ({_age_input:.0f} yrs)")
+        except ValueError as _e:
+            st.error(f"⚠️ {_e}")
+    if _stored_age is not None:
+        st.caption(f"Saved: {_stored_age:.0f} years")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -476,6 +498,29 @@ with tab_report:
                     with col4:
                         with st.container(border=True):
                             st.metric("🔥 Streak", f"{analysis.streak_days} days")
+
+                    # ── Age-Based Guideline Comparison ──
+                    _stored_age = profile_tool.get_user_age(user_id)
+                    if _stored_age is not None:
+                        from tools.sleep_guideline import evaluate_duration_against_guideline
+                        try:
+                            _guideline = evaluate_duration_against_guideline(_stored_age, analysis.average_duration)
+                            _verdict_str = _guideline["verdict"].value if hasattr(_guideline["verdict"], "value") else str(_guideline["verdict"])
+                            _badge = "🟢 Within Range" if _guideline["within_range"] else ("🔴 Below Range" if _verdict_str == "NEEDS_ATTENTION" else "🟡 Above Range")
+                            
+                            st.markdown("#### 💤 Age-Based Guideline Comparison")
+                            with st.container(border=True):
+                                gcol1, gcol2 = st.columns([2, 1])
+                                with gcol1:
+                                    st.markdown(f"**Group:** {_guideline['age_band']}")
+                                    st.markdown(f"**Recommended:** {_guideline['recommended_min_hours']}–{_guideline['recommended_max_hours']} hours/night")
+                                with gcol2:
+                                    st.markdown(f"**Status:**\n\n### {_badge}")
+                                
+                                st.info(_guideline["note"])
+                                st.caption(f"Source: {_guideline['source']}")
+                        except Exception as _e:
+                            st.caption(f"Failed to load sleep guideline: {_e}")
 
                     st.write("")
 
