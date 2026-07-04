@@ -18,15 +18,15 @@ def analyze_patterns(user_id: str, days: int = 7) -> tuple[SleepAnalysisSchema, 
 
     entries = fetch_recent_entries(user_id, days)
     if not entries:
-        raise ValueError(f"No sleep entries found for user {user_id} in the last {days} days.")
+        raise ValueError(f"No sleep entries found for user {user_id}...")
 
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT check_in_streak FROM users WHERE user_id = ?", (user_id,))
-    user_row = cursor.fetchone()
-    conn.close()
-    streak_days = user_row[0] if user_row else 0
+    # Better: get full profile
+    profile = get_user_profile(user_id)   # Use this instead of separate queries
+    streak_days = profile.check_in_streak
+    age_years = profile.age_years
 
-    age_years = get_user_age(user_id)
-    analysis = build_sleep_analysis(user_id, days, entries, streak_days, age_years=age_years)
+    analysis = build_sleep_analysis(
+        user_id, days, entries, streak_days, age_years=age_years
+    )
+    
     return analysis, entries

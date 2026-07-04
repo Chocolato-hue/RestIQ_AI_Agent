@@ -26,43 +26,16 @@ logger = logging.getLogger("tools.concierge")
 _CONCIERGE_TEMPERATURE = 0.2
 
 # LLM only extracts slots — follow-up questions are built in code (shorter, bundled).
-_SYSTEM_INSTRUCTION = """You extract sleep check-in data from the user's latest message. You do NOT ask questions.
+_SYSTEM_INSTRUCTION = """You are a warm, helpful sleep concierge. The user is {age_info}.
 
-Return JSON only:
-{
-  "acknowledgment": "max 8 words mirroring something specific they said, or empty string",
-  "updated_slots": {
-    "bedtime": "HH:MM or null",
-    "wake_time": "HH:MM or null",
-    "wake_up_count": null,
-    "sleep_quality": "POOR|FAIR|GOOD|EXCELLENT or null",
-    "mood_on_wake": "TERRIBLE|TIRED|OKAY|GOOD|GREAT or null",
-    "caffeine_after_2pm": null,
-    "exercise_today": null,
-    "screen_time_before_bed": null,
-    "focus_level": null,
-    "energy_level": null,
-    "notes": null
-  },
-  "slot_confidence": {
-    "bedtime": "known|inferred|unknown",
-    "wake_time": "known|inferred|unknown",
-    ...
-  },
-  "curiosity_note": "optional short note max 60 chars, or null"
-}
+Extract sleep data from the user's latest message only. Return JSON only.
 
 Rules:
-- Only update fields mentioned or clearly implied in THIS message.
-- known = user stated it; inferred = reasonable from context; unknown = not addressed.
-- If user denies caffeine/exercise/screens, set false with known confidence.
-- If user says uninterrupted/straight through/slept through, wake_up_count=0 known.
-- Fuzzy times ("around 3am"): pick best HH:MM as inferred, not unknown.
-- "Slept fine/okay/sufficient" → sleep_quality FAIR or GOOD inferred, mood_on_wake OKAY inferred.
-- curiosity_note: one short fact only, no quotes inside the string.
-- acknowledgment: empty string if nothing new to mirror. Never write paragraphs.
+- Use the user's age to set realistic expectations (e.g., teens need 8-10h, adults 7-9h).
+- Be encouraging and natural.
+- acknowledgment: short and personal.
+- Do not repeat the user's message.
 """
-
 
 class _ConciergeLLMResponse(BaseModel):
     acknowledgment: str = ""
@@ -98,24 +71,45 @@ def start_session(
     latest_entry: Optional[SleepEntrySchema] = None,
     session_context: Optional[str] = None,
     include_opener: bool = True,
+    age_years: Optional[float] = None,
 ) -> tuple[CheckinSessionState, str]:
-    """Create a new check-in session and return its opening message."""
+    """Create a new check-in session."""
     context = session_context or _memory_context_from_entry(latest_entry)
-    session = CheckinSessionState(user_id=user_id, session_context=context)
-    opener = _default_opener(context)
+    
+    session = CheckinSessionState(
+        user_id=user_id,
+        session_context=context,
+        age_years=age_years   # Important: store it
+    )
+
+    # Better greeting based on time (simple version)
+    from datetime import datetime
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        greeting = "Good morning"
+    elif 12 <= hour < 17:
+        greeting = "Good afternoon"
+    else:
+        greeting = "Good evening"
+
+    opener = f"{greeting} 🌙 What happened with your sleep last night?"
+
     if include_opener:
         session.messages.append(ChatMessage(role="assistant", content=opener))
+    
     return session, opener
 
 
 def _serialize_session_for_prompt(session: CheckinSessionState) -> str:
     slots = session.slots.model_dump(exclude_none=True)
     confidence = {k: v.value for k, v in session.slot_confidence.items()}
+    age_info = f"User is {session.age_years:.0f} years old." if session.age_years else "User age unknown."
     history = "\n".join(
         f"{'User' if m.role == 'user' else 'RestIQ'}: {m.content}"
         for m in session.messages
     )
     return (
+        f"{age_info}\nCollected: ...\nChat history: ..."
         f"Already collected: {json.dumps(slots)}\n"
         f"Confidence: {json.dumps(confidence)}\n"
         f"Still unknown: {session.missing_slots()}\n"
@@ -169,6 +163,10 @@ def _merge_slots(session: CheckinSessionState, turn: ConciergeTurnResponse) -> N
 
 def _build_follow_up(session: CheckinSessionState) -> Optional[str]:
     """Short, bundled follow-ups — avoids one long LLM question per slot."""
+    # === NEW: Ask for age if missing (Highest priority) ===
+    if session.age_years is None or session.age_years == 0:
+        return "To give you better personalized advice, could you tell me your age? (Just the number is fine 😊)"
+        
     missing = session.missing_slots()
     if not missing:
         return None

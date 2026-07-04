@@ -354,6 +354,7 @@ class CheckinSessionState(BaseModel):
         None, description="Optional context from prior sleep logs or scheduler hints"
     )
     curiosity_notes: list[str] = Field(default_factory=list)
+    age_years: Optional[float] = Field(None, description="User age for this session") 
 
     def missing_slots(self) -> list[str]:
         missing = []

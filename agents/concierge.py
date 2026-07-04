@@ -16,8 +16,9 @@ def start_session(
     latest_entry: Optional[SleepEntrySchema] = None,
     session_context: Optional[str] = None,
     include_opener: bool = True,
+    age_years: Optional[float] = None, 
 ) -> tuple[CheckinSessionState, str]:
-    return concierge_tool.start_session(user_id, latest_entry, session_context, include_opener)
+    return concierge_tool.start_session(user_id, latest_entry, session_context, include_opener, age_years=age_years )
 
 
 def process_turn(session: CheckinSessionState, user_message: str) -> tuple[CheckinSessionState, str]:

@@ -92,7 +92,7 @@ def build_sleep_analysis(
     if not recommendations:
         recommendations.append("Maintain consistency in bedtime and waking hours.")
 
-    # ── Age-based guideline check (CDC/AASM) ──────────────────────────────────
+        # ── Age-based guideline check (CDC/AASM) ──────────────────────────────────
     if age_years is not None:
         try:
             guideline_result = evaluate_duration_against_guideline(
@@ -100,25 +100,30 @@ def build_sleep_analysis(
                 average_duration_hours=average_duration,
             )
             patterns_detected.append(guideline_result["note"])
+
             verdict_str = (
                 guideline_result["verdict"].value
                 if hasattr(guideline_result["verdict"], "value")
                 else str(guideline_result["verdict"])
             )
+
             if verdict_str == "NEEDS_ATTENTION":
                 recommendations.append(
-                    f"Your average sleep is below the {guideline_result['recommended_min_hours']}–"
-                    f"{guideline_result['recommended_max_hours']}h range recommended for "
-                    f"{guideline_result['age_band'].lower()}. "
-                    "Try going to bed 20–30 minutes earlier each night."
+                    f"Your average sleep is below the recommended {guideline_result['recommended_min_hours']}–"
+                    f"{guideline_result['recommended_max_hours']}h for {guideline_result['age_band'].lower()}. "
+                    "Try going to bed 20–30 minutes earlier."
                 )
             elif verdict_str == "IMPROVING" and guideline_result["recommended_max_hours"] < average_duration:
                 recommendations.append(
-                    f"Your average sleep slightly exceeds the {guideline_result['recommended_max_hours']}h "
-                    "upper limit. If you still feel tired, consider a sleep quality review."
+                    f"Your average sleep exceeds the upper limit for your age group. "
+                    "If you feel tired, try a slightly earlier bedtime."
                 )
-        except Exception:  # noqa: BLE001 — guideline enrichment is best-effort
-            pass
+            else:
+                recommendations.append(
+                    f"Good job! Your sleep duration is within the healthy range for your age ({age_years:.0f})."
+                )
+        except Exception:
+            pass  # Best effort - don't break analysis if guideline fails
 
     return SleepAnalysisSchema(
         user_id=user_id,
