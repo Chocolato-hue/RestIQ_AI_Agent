@@ -1,8 +1,25 @@
 """Sleep pattern analysis shared by analyzer and reporter tools."""
 
+from typing import Optional
+from datetime import datetime, timedelta
 from schemas import SleepAnalysisSchema, SleepEntrySchema, VerdictLabel
 from tools.sleep_guideline import evaluate_duration_against_guideline
 
+def calculate_recommended_bedtime(target_wake_time: str, target_duration: float = 8.0, age_years: Optional[float] = None) -> str:
+    """Calculate ideal bedtime based on target wake time and age."""
+    try:
+        wake = datetime.strptime(target_wake_time, "%H:%M")
+        
+        # Adjust duration based on age
+        if age_years and age_years < 18:
+            target_duration = max(target_duration, 8.5)
+        elif age_years and age_years >= 65:
+            target_duration = min(target_duration, 7.5)
+        
+        bedtime = wake - timedelta(hours=target_duration)
+        return bedtime.strftime("%H:%M")
+    except:
+        return "22:30"  # fallback
 
 def build_sleep_analysis(
     user_id: str,
@@ -124,6 +141,21 @@ def build_sleep_analysis(
                 )
         except Exception:
             pass  # Best effort - don't break analysis if guideline fails
+
+    # === RECOMMENDED BEDTIME SUGGESTION ===
+    if age_years is not None and entries:
+        try:
+            suggested_bedtime = calculate_recommended_bedtime(
+                target_wake_time="07:00",   # TODO: Get from user profile later
+                target_duration=average_duration,
+                age_years=age_years
+            )
+            recommendations.append(
+                f"💡 Recommended bedtime for you tonight: **{suggested_bedtime}** "
+                f"to get optimal sleep based on your age and patterns."
+            )
+        except Exception:
+            pass
 
     return SleepAnalysisSchema(
         user_id=user_id,

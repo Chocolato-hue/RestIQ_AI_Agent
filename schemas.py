@@ -271,6 +271,10 @@ class WeeklyReportSchema(BaseModel):
     plotly_chart_path: Optional[str] = Field(None, description="Local filesystem or CDN path to the generated Plotly sleep chart image")
     milestone_message: Optional[str] = Field(None, description="Optional celebratory message if a milestone was reached")
     next_week_goal: str = Field(..., description="Personalized actionable target for the next week")
+    coach_narrative: Optional[str] = Field(
+        None,
+        description="Short AI-generated coach summary paragraph for the weekly report, written in warm coaching voice."
+    )
 
 
 class MCPToolResponseSchema(BaseModel):
@@ -354,7 +358,15 @@ class CheckinSessionState(BaseModel):
         None, description="Optional context from prior sleep logs or scheduler hints"
     )
     curiosity_notes: list[str] = Field(default_factory=list)
-    age_years: Optional[float] = Field(None, description="User age for this session") 
+    age_years: Optional[float] = Field(None, description="User age for this session")
+    age_asked: bool = Field(default=False, description="Whether we already asked for age")
+    age_attempt_count: int = Field(
+        default=0,
+        description="How many times the user has attempted to answer the age question. Caps at 2."
+    )
+    coach_narrative: Optional[str] = Field(
+        None, description="Short AI-generated coaching paragraph appended after slot extraction."
+    )
 
     def missing_slots(self) -> list[str]:
         missing = []

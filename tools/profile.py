@@ -177,6 +177,37 @@ def update_user_age(user_id: str, age_years: float) -> None:
     conn.close()
 
 
+def update_preferred_checkin_time(user_id: str, time_str: str) -> None:
+    """Persist the user's preferred daily check-in reminder time (HH:MM)."""
+    import re as _re
+    if not _re.match(r"^\d{2}:\d{2}$", time_str):
+        raise ValueError(f"time_str must be HH:MM, got '{time_str}'.")
+    logger.info("[PROFILE] update_preferred_checkin_time user_id=%s time=%s", user_id, time_str)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET preferred_checkin_time = ? WHERE user_id = ?",
+        (time_str, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_preferred_checkin_time(user_id: str) -> Optional[str]:
+    """Return the stored preferred_checkin_time for *user_id*, or None."""
+    logger.debug("[PROFILE] get_preferred_checkin_time user_id=%s", user_id)
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT preferred_checkin_time FROM users WHERE user_id = ?", (user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0]:
+        return str(row[0])
+    return None
+
+
 def store_sleep_assessment(user_id: str, assessment: dict) -> None:
     """Persist a guideline assessment record to *sleep_assessments*.
 

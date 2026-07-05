@@ -16,6 +16,49 @@ from tools.profile import get_user_age
 logger = logging.getLogger("tools.reporting")
 
 
+def _generate_weekly_coach_narrative(analysis, entries: list, age_years=None) -> str:
+    """Optional coach narrative using Gemini."""
+    try:
+        from google import genai
+        from google.genai import types
+
+        api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not api_key:
+            return ""
+
+        client = genai.Client(api_key=api_key)
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+        age_line = f"User age: {age_years:.0f} years." if age_years else "User age unknown."
+        verdict = analysis.verdict.value if hasattr(analysis.verdict, "value") else str(analysis.verdict)
+
+        prompt = (
+            f"{age_line}\n"
+            f"Weekly sleep stats:\n"
+            f"  Average score: {analysis.average_score}/100\n"
+            f"  Average duration: {analysis.average_duration}h\n"
+            f"  Average wake-ups: {analysis.average_wake_ups}\n"
+            f"  Streak: {analysis.streak_days} days\n"
+            f"  Verdict: {verdict}\n"
+            f"  Patterns: {'; '.join(analysis.patterns_detected[:3]) or 'none'}\n\n"
+            "Write a warm, encouraging 2-3 sentence summary. Be specific about their average sleep and top pattern. "
+            "End with one concrete action for next week. Return plain text only."
+        )
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction="You are RestIQ, a warm and encouraging sleep coach.",
+                temperature=0.4,
+            ),
+        )
+        return (response.text or "").strip()
+    except Exception as e:
+        logger.warning("[REPORTING] Coach narrative failed: %s", e)
+        return ""
+
+
 def generate_report(user_id: str) -> WeeklyReportSchema:
     logger.info("[REPORTING] generate_report user_id=%s", user_id)
 
@@ -23,11 +66,7 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute(
-        """
-        SELECT * FROM sleep_entries
-        WHERE user_id = ?
-        ORDER BY date DESC LIMIT 7
-        """,
+        "SELECT * FROM sleep_entries WHERE user_id = ? ORDER BY date DESC",
         (user_id,),
     )
     rows = cursor.fetchall()
@@ -42,136 +81,95 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
     conn.close()
 
     if not rows:
-        raise ValueError(
-            "No sleep entries found. Please log at least 3 nights of sleep first. "
-            "Use /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
-        )
-
-    if len(rows) < 3:
-        raise ValueError(
-            f"You only have {len(rows)} sleep entr{'y' if len(rows) == 1 else 'ies'} recorded. "
-            "A minimum of 3 entries is required to generate a meaningful weekly report. "
-            "Please log more sleep via /checkin in Telegram or the Check-in tab in the Streamlit dashboard."
-        )
+        raise ValueError("No sleep entries found. Please log your first night.")
 
     rows_sorted = sorted(rows, key=lambda r: r["date"])
-    dates = [r["date"] for r in rows_sorted]
-
     entries = []
-    scores = []
     for r in rows_sorted:
         entry = row_to_entry(r)
         if entry.score is None:
             entry.score = compute_sleep_score(entry)
         entries.append(entry)
-        scores.append(entry.score)
     ensure_entry_scores(entries)
 
-    import plotly.graph_objects as go
-    import plotly.io as pio
+    days_logged = len(entries)
 
-    day_labels = []
-    for d in dates:
+    # Dynamic title
+    if days_logged >= 7:
+        report_title = "Weekly Report"
+    else:
+        report_title = f"Partial Report ({days_logged} days logged)"
+
+    # Build analysis
+    age_years = get_user_age(user_id)
+    analysis = build_sleep_analysis(user_id, days_logged, entries, check_in_streak, age_years=age_years)
+
+    # Chart
+    chart_path = f"/tmp/restiq_report_{user_id}.png"
+    chart_exists = False
+    if days_logged >= 2:
         try:
-            day_labels.append(datetime.datetime.strptime(d, "%Y-%m-%d").strftime("%a"))
-        except Exception:
-            day_labels.append(str(d))
+            import plotly.graph_objects as go
+            import plotly.io as pio
 
-    colors = []
-    for s in scores:
-        if s < 50:
-            colors.append("#EF4444")
-        elif s <= 75:
-            colors.append("#F59E0B")
-        else:
-            colors.append("#10B981")
+            day_labels = []
+            for d in [r["date"] for r in rows_sorted]:
+                try:
+                    day_labels.append(datetime.datetime.strptime(d, "%Y-%m-%d").strftime("%a"))
+                except:
+                    day_labels.append(str(d))
 
-    fig = go.Figure(
-        data=[
-            go.Bar(
+            scores = [e.score for e in entries]
+            colors = ["#10B981" if s >= 70 else "#F59E0B" if s >= 50 else "#EF4444" for s in scores]
+
+            fig = go.Figure(data=[go.Bar(
                 x=day_labels,
                 y=scores,
                 marker_color=colors,
                 text=[f"{s}/100" for s in scores],
                 textposition="outside",
-                hovertemplate="<b>%{x}</b><br>Sleep Score: %{y}/100<extra></extra>",
+            )])
+
+            fig.update_layout(
+                title={"text": report_title, "x": 0.5},
+                xaxis_title="Day",
+                yaxis_title="Sleep Score",
+                yaxis=dict(range=[0, 105]),
+                height=420,
             )
-        ]    
-    )
 
-    fig.update_layout(
-        title={
-            "text": "Weekly Sleep Score",
-            "x": 0.5,
-            "xanchor": "center",
-        },
-        xaxis_title="Day",
-        yaxis_title="Score",
-        yaxis=dict(range=[0, 105]),
-        width=900,
-        height=520,
-        margin=dict(l=70, r=40, t=80, b=70),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        font=dict(size=18, color="#111827"),
-        showlegend=False,
-    )
+            os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+            pio.write_image(fig, chart_path, engine="kaleido")
+            chart_exists = True
+        except Exception as e:
+            logger.warning("Chart generation failed: %s", e)
 
-    fig.update_xaxes(
-        tickfont=dict(size=18),
-        showgrid=False,
-    )
+    # Coach narrative
+    coach_narrative = _generate_weekly_coach_narrative(analysis, entries, age_years)
 
-    fig.update_yaxes(
-        tickfont=dict(size=16),
-        gridcolor="#E5E7EB",
-    )
-
-    chart_path = f"/tmp/restiq_report_{user_id}.png"
-    os.makedirs(os.path.dirname(chart_path), exist_ok=True)
-    try:
-        pio.write_image(fig, chart_path, engine="kaleido")
-    except Exception as e_img:
-        logger.warning(
-            "[REPORTING] Plotly write_image failed (kaleido not available): %s. Writing mock file.",
-            str(e_img),
-        )
-        with open(chart_path, "wb") as f:
-            f.write(b"MOCK_PNG_DATA")
-
-    age_years = get_user_age(user_id)
-    analysis = build_sleep_analysis(user_id, 7, entries, check_in_streak, age_years=age_years)
-
-    milestones = [7, 14, 30, 60, 90]
+    # Milestone
     milestone_message = None
-    for m in milestones:
-        if total_entries == m:
-            milestone_message = (
-                f"Congratulations! You have logged {m} sleep entries. "
-                "You've reached a major tracking milestone!"
-            )
-            break
-    if not milestone_message:
-        for m in milestones:
-            if check_in_streak == m:
-                milestone_message = (
-                    f"Wow! You've achieved a check-in streak of {m} days. Incredible consistency!"
-                )
-                break
+    if total_entries in [7, 14, 30, 60, 90]:
+        milestone_message = f"Congratulations! You have logged {total_entries} sleep entries."
 
-    next_week_goal = "Aimed at improving sleep consistency: limit screen time 30 mins before sleep."
-    if analysis.recommendations:
-        next_week_goal = f"Focus on this recommendation: {analysis.recommendations[0]}"
+    # Next week goal
+    if days_logged < 3:
+        next_week_goal = "Log a few more nights this week to unlock better insights."
+    elif analysis.average_duration < 7:
+        next_week_goal = "Focus on getting at least 7 hours of sleep per night."
+    else:
+        next_week_goal = analysis.recommendations[0] if analysis.recommendations else "Maintain consistency in your sleep schedule."
 
-    week_start = datetime.datetime.strptime(dates[0], "%Y-%m-%d").date()
-    week_end = datetime.datetime.strptime(dates[-1], "%Y-%m-%d").date()
+    week_start = datetime.datetime.strptime(rows_sorted[0]["date"], "%Y-%m-%d").date()
+    week_end = datetime.datetime.strptime(rows_sorted[-1]["date"], "%Y-%m-%d").date()
 
     return WeeklyReportSchema(
         user_id=user_id,
         week_start=week_start,
         week_end=week_end,
         analysis=analysis,
-        plotly_chart_path=chart_path,
+        plotly_chart_path=chart_path if chart_exists else None,
         milestone_message=milestone_message,
         next_week_goal=next_week_goal,
+        coach_narrative=coach_narrative or None,
     )

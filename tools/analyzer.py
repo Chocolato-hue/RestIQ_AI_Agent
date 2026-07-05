@@ -8,7 +8,7 @@ from schemas import SleepAnalysisSchema, SleepEntrySchema
 from tools.analysis import build_sleep_analysis
 from db.sqlite import DB_FILE
 from db.entries import fetch_recent_entries
-from tools.profile import get_user_age
+from tools.profile import get_user_profile
 
 logger = logging.getLogger("tools.analyzer")
 
@@ -20,13 +20,10 @@ def analyze_patterns(user_id: str, days: int = 7) -> tuple[SleepAnalysisSchema, 
     if not entries:
         raise ValueError(f"No sleep entries found for user {user_id}...")
 
-    # Better: get full profile
-    profile = get_user_profile(user_id)   # Use this instead of separate queries
+    profile = get_user_profile(user_id)   # Now it should work
     streak_days = profile.check_in_streak
     age_years = profile.age_years
 
-    analysis = build_sleep_analysis(
-        user_id, days, entries, streak_days, age_years=age_years
-    )
+    analysis = build_sleep_analysis(user_id, days, entries, streak_days, age_years=age_years)
     
     return analysis, entries

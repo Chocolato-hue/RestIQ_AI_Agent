@@ -32,6 +32,10 @@ from agents.tracker import run_get_history, run_get_latest
 from agents.scheduler import run_evaluate_plan
 from agents import concierge as concierge_agent
 from tools import profile as profile_tool
+from tools.profile import (
+    update_preferred_checkin_time,
+    get_preferred_checkin_time,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -161,6 +165,53 @@ with st.sidebar:
     if _stored_age is not None:
         st.caption(f"Saved: {_stored_age:.0f} years")
 
+    # ── Follow-up Scheduler ──────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### ⏰ Daily Reminder")
+    _saved_time = get_preferred_checkin_time(user_id)
+    _default_time = datetime.time(8, 0)
+    if _saved_time:
+        try:
+            _h, _m = map(int, _saved_time.split(":"))
+            _default_time = datetime.time(_h, _m)
+        except Exception:
+            pass
+    _reminder_time = st.time_input(
+        "Remind me at",
+        value=_default_time,
+        key="reminder_time_input",
+        help="Set the time you'd like RestIQ to send a daily check-in nudge.",
+    )
+    if st.button("💾 Save reminder", key="save_reminder_btn", use_container_width=True):
+        try:
+            _time_str = _reminder_time.strftime("%H:%M")
+            update_preferred_checkin_time(user_id, _time_str)
+            st.success(f"✅ Reminder set for {_time_str} daily")
+        except Exception as _e:
+            st.error(f"⚠️ {_e}")
+    _chat_id_for_reminder = profile_tool.get_telegram_chat_id(user_id)
+    if not _chat_id_for_reminder:
+        st.caption("📲 Connect Telegram below to receive push reminders at this time.")
+    else:
+        if _saved_time:
+            st.caption(f"📬 Reminders sent to Telegram at **{_saved_time}** daily.")
+
+    # ── Missed check-in notification (Fix G: moved to sidebar) ───────────────
+    st.divider()
+    try:
+        _history_recent = run_get_history(user_id, days=2)
+        _today = datetime.date.today()
+        _logged_dates = {e.date for e in (_history_recent or [])}
+        _yesterday = _today - datetime.timedelta(days=1)
+        if _yesterday not in _logged_dates and _today not in _logged_dates:
+            st.warning("⚠️ You haven't logged last night's sleep yet.")
+            if st.button("📝 Log now", key="sidebar_log_now", use_container_width=True):
+                st.session_state["active_tab"] = "checkin"
+                st.rerun()
+    except Exception:
+        pass  # Silently skip if history unavailable
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,6 +278,8 @@ with tab_checkin:
     )
 
     latest_entry = run_get_latest(user_id)
+    if "input_counter" not in st.session_state:
+        st.session_state.input_counter = 0
 
     if "checkin_session" not in st.session_state:
         try:
@@ -315,10 +368,31 @@ with tab_checkin:
         with st.container(border=True):
             st.success("✅ Sleep logged successfully!")
 
-            col1, col2, col3 = st.columns(3)
+            # ── Prominent bedtime card ──────────────────────────────────
+            st.markdown(
+                f"""
+                <div style="
+                    background: linear-gradient(135deg, #1e3a5f 0%, #0f2b46 100%);
+                    border-radius: 14px;
+                    padding: 18px 24px;
+                    margin: 10px 0 18px 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                ">
+                    <span style="font-size:2.4rem;">🌙</span>
+                    <div>
+                        <div style="color:#a0c4ff;font-size:0.78rem;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;">Your ideal bedtime tonight</div>
+                        <div style="color:#ffffff;font-size:2rem;font-weight:700;line-height:1.2;">{analysis['bedtime']}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            col1, col2 = st.columns(2)
             col1.metric("⭐ Sleep Score", f"{score}/100", analysis["score_label"])
             col2.metric("🛌 Duration", f"{analysis['duration']}h")
-            col3.metric("⏰ Tonight's Bedtime", analysis["bedtime"])
 
             st.divider()
 
@@ -344,77 +418,128 @@ with tab_checkin:
 
             st.info(f"**💡 Why it matters**\n\n{analysis['why_it_matters']}")
 
+            # ── Coach narrative (Q1: bundled from LLM response) ─────────
+            _narrative = analysis.get("coach_narrative", "")
+            if _narrative:
+                st.write("")
+                st.markdown(
+                    f"""
+                    <div style="
+                        background: linear-gradient(135deg, #1a2e1a 0%, #0d1f0d 100%);
+                        border-left: 4px solid #4ade80;
+                        border-radius: 0 10px 10px 0;
+                        padding: 16px 20px;
+                        margin: 8px 0;
+                    ">
+                        <div style="color:#86efac;font-size:0.78rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">🏋️ Your Coach Says</div>
+                        <div style="color:#dcfce7;font-size:0.97rem;line-height:1.6;">{_narrative}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
             if analysis.get("plan_adjusted"):
                 st.info(f"📋 **Plan update:** {analysis['plan_reason']}")
 
     if not session_complete and not st.session_state.get("checkin_analyzed"):
-        answer = st.text_input("Type your reply", key="concierge_reply")
+            # Dynamic key to force reset
+            input_key = f"concierge_reply_{st.session_state.get('input_counter', 0)}"
+            
+            answer = st.text_input(
+                "Type your reply",
+                key=input_key,
+                placeholder="e.g. I slept from 11 PM to 7 AM, woke up once...",
+            )
 
-        if st.button("Send", type="primary", use_container_width=True):
-            if not answer.strip():
-                st.warning("Please type a reply before sending.")
-            else:
-                with st.spinner("RestIQ is thinking..."):
-                    try:
-                        session, _reply = concierge_agent.process_turn(session, answer.strip())
-                        st.session_state.checkin_session = concierge_agent.session_to_dict(session)
-                        st.rerun()
-                    except Exception as e:
-                        err = str(e)
-                        if "GOOGLE_API_KEY" in err:
-                            st.error(err)
-                        else:
-                            st.error(f"Couldn't process your reply: {err}")
-                            st.caption("Check your API key, model name (GEMINI_MODEL), and terminal logs.")
+            if st.button("Send 💬", type="primary", use_container_width=True):
+                if not answer or not answer.strip():
+                    st.warning("Please type something before sending.")
+                else:
+                    with st.spinner("RestIQ is thinking..."):
+                        try:
+                            session, _reply = concierge_agent.process_turn(session, answer.strip())
+                            st.session_state.checkin_session = concierge_agent.session_to_dict(session)
+                            
+                            # Increment counter to reset the input widget
+                            st.session_state["input_counter"] = st.session_state.get("input_counter", 0) + 1
+                            st.rerun()
+                        except Exception as e:
+                            err = str(e)
+                            if "GOOGLE_API_KEY" in err:
+                                st.error("Google API key is missing or invalid.")
+                            else:
+                                st.error(f"Couldn't process your reply: {err}")
 
     elif session_complete and not st.session_state.get("checkin_analyzed"):
-        with st.expander("Review collected check-in"):
-            slots = session.slots.model_dump(exclude_none=True)
-            if slots:
-                for key, value in slots.items():
-                    st.markdown(f"**{key.replace('_', ' ').title()}:** {value}")
-            else:
-                st.write("Details captured in conversation above.")
+            with st.expander("Review collected check-in"):
+                slots = session.slots.model_dump(exclude_none=True)
+                if slots:
+                    for key, value in slots.items():
+                        # Make it human readable
+                        display_key = key.replace('_', ' ').title()
+                        if key == "sleep_quality" and value:
+                            display_key = "Sleep Quality"
+                            value = value.value if hasattr(value, "value") else value
+                        elif key == "mood_on_wake" and value:
+                            display_key = "Mood on Wake"
+                            value = value.value if hasattr(value, "value") else value
+                        elif isinstance(value, bool):
+                            value = "Yes" if value else "No"
+                        
+                        st.markdown(f"**{display_key}:** {value}")
+                else:
+                    st.write("No details captured yet.")
 
-        if st.button("Analyze my sleep", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your sleep..."):
-                try:
-                    transcript = concierge_agent.build_transcript(session)
-                    result = run_checkin(user_id, transcript)
-                    entry = result["entry"]
-                    circadian = result["circadian"]
-                    biggest_issue, tonight_goal, why_it_matters = _derive_coaching_focus(entry)
-                    score = entry.score
+            if st.button("Analyze my sleep", type="primary", use_container_width=True):
+                with st.spinner("Analyzing your sleep..."):
+                    try:
+                        transcript = concierge_agent.build_transcript(session)
+                        result = run_checkin(user_id, transcript)
+                        entry = result["entry"]
+                        circadian = result["circadian"]
+                        biggest_issue, tonight_goal, why_it_matters = _derive_coaching_focus(entry)
+                        score = entry.score
 
-                    st.session_state.checkin_analyzed = True
-                    st.session_state.checkin_result = result["reply_message"]
-                    st.session_state.checkin_analysis = {
-                        "score": score,
-                        "score_label": _score_label(score),
-                        "duration": entry.sleep_duration,
-                        "bedtime": circadian.recommended_bedtime,
-                        "biggest_issue": biggest_issue,
-                        "tonight_goal": tonight_goal,
-                        "why_it_matters": why_it_matters,
-                        "plan_adjusted": result["plan_adjustment"].adjusted,
-                        "plan_reason": result["plan_adjustment"].reason,
-                    }
-                    st.rerun()
+                        # Pull coach narrative from session if the LLM already wrote one
+                        _coach_text = session.coach_narrative or ""
 
-                except Exception:
-                    st.error("Couldn't process your check-in right now.")
-                    st.info("The AI service may be temporarily unavailable. Please try again later.")
-                    st.caption("Technical details are available in the terminal logs.")
+                        st.session_state.checkin_analyzed = True
+                        st.session_state.checkin_result = result["reply_message"]
+                        if session.age_years and session.age_years > 0:
+                            try:
+                                profile_tool.update_user_age(user_id, session.age_years)
+                                st.success(f"✅ Age saved: {session.age_years:.0f} years")
+                            except:
+                                pass
+                        st.session_state.checkin_analysis = {
+                            "score": score,
+                            "score_label": _score_label(score),
+                            "duration": entry.sleep_duration,
+                            "bedtime": circadian.recommended_bedtime,
+                            "biggest_issue": biggest_issue,
+                            "tonight_goal": tonight_goal,
+                            "why_it_matters": why_it_matters,
+                            "plan_adjusted": result["plan_adjustment"].adjusted,
+                            "plan_reason": result["plan_adjustment"].reason,
+                            "coach_narrative": _coach_text,
+                        }
+                        st.rerun()
+
+                    except Exception:
+                        st.error("Couldn't process your check-in right now.")
+                        st.info("The AI service may be temporarily unavailable. Please try again later.")
+                        st.caption("Technical details are available in the terminal logs.")
 
     elif st.session_state.get("checkin_analyzed") and st.session_state.get("checkin_analysis"):
         _render_checkin_analysis(st.session_state.checkin_analysis)
 
-    if st.button("Start over", use_container_width=True):
+    if st.button("🔄 New Check-in", use_container_width=True):
         session, _opener = concierge_agent.start_session(user_id, latest_entry)
         st.session_state.checkin_session = concierge_agent.session_to_dict(session)
         st.session_state.checkin_analyzed = False
         st.session_state.checkin_result = None
         st.session_state.checkin_analysis = None
+        st.session_state["input_counter"] = 0
         st.rerun()
 
     st.divider()
@@ -549,6 +674,25 @@ with tab_report:
 
                 st.write("")
                 st.divider()
+
+                # ── Coach Summary (Q3: bundled in run_weekly_report) ─────
+                _weekly_narrative = getattr(report, "coach_narrative", None)
+                if _weekly_narrative:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background: linear-gradient(135deg, #1a2e1a 0%, #0d1f0d 100%);
+                            border-left: 4px solid #4ade80;
+                            border-radius: 0 12px 12px 0;
+                            padding: 20px 24px;
+                            margin-bottom: 20px;
+                        ">
+                            <div style="color:#86efac;font-size:0.78rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;">🏋️ Coach Weekly Summary</div>
+                            <div style="color:#dcfce7;font-size:1rem;line-height:1.7;">{_weekly_narrative}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
                 # ---------------- HEALTH SCORE ----------------
                 st.markdown("## 🩺 Sleep Health Score")
