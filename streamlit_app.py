@@ -674,6 +674,32 @@ with tab_report:
 
                 st.write("")
                 st.divider()
+                
+                # ---------------- DEMO-READY REPORT HEADER ----------------
+                report_label = "Weekly Report" if history_count >= 7 else f"Partial Report · {history_count} day(s) logged"
+
+                st.markdown("## 🌙 RestIQ Sleep Intelligence Report")
+                st.caption("A personalized sleep summary generated from recent check-ins, trends, and behavioral patterns.")
+
+                with st.container(border=True):
+                    st.markdown(f"### {report_label}")
+                    st.info(f"🎯 **Main Focus:** {main_issue}")
+
+                    col_a, col_b, col_c, col_d = st.columns(4)
+
+                    with col_a:
+                        st.metric("Avg Score", f"{round(analysis.average_score)}")
+                        st.caption("out of 100")
+
+                    with col_b:
+                        st.metric("Avg Sleep", f"{analysis.average_duration}h")
+
+                    with col_c:
+                        st.metric("Wake-ups", f"{analysis.average_wake_ups}")
+
+                    with col_d:
+                        st.metric("Streak", f"{analysis.streak_days}d")
+               
 
                 # ── Coach Summary (Q3: bundled in run_weekly_report) ─────
                 _weekly_narrative = getattr(report, "coach_narrative", None)
