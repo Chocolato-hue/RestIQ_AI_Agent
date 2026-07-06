@@ -142,18 +142,34 @@ def build_sleep_analysis(
         except Exception:
             pass  # Best effort - don't break analysis if guideline fails
 
-    # === RECOMMENDED BEDTIME SUGGESTION ===
+    # === EDUCATIONAL RECOMMENDED BEDTIME ===
     if age_years is not None and entries:
         try:
+            target_wake = "07:00"
+            if entries and entries[0].wake_time:
+                target_wake = entries[0].wake_time
+            
             suggested_bedtime = calculate_recommended_bedtime(
-                target_wake_time="07:00",   # TODO: Get from user profile later
+                target_wake_time=target_wake,
                 target_duration=average_duration,
                 age_years=age_years
             )
+            
             recommendations.append(
-                f"💡 Recommended bedtime for you tonight: **{suggested_bedtime}** "
-                f"to get optimal sleep based on your age and patterns."
+                f"💡 **Ideal bedtime for you**: around **{suggested_bedtime}**, "
+                f"waking around **{target_wake}**."
             )
+            
+            # Convert to minutes for safe comparison
+            h, m = map(int, suggested_bedtime.split(":"))
+            minutes = (h * 60 + m) % 1440
+            is_late = minutes >= 23*60 or minutes < 6*60
+            
+            if is_late:
+                recommendations.append(
+                    f"Going to bed at {suggested_bedtime} is quite late. "
+                    "Shifting 20–30 minutes earlier can improve sleep quality significantly."
+                )
         except Exception:
             pass
 

@@ -27,7 +27,14 @@ def _generate_weekly_coach_narrative(analysis, entries: list, age_years=None) ->
             return ""
 
         client = genai.Client(api_key=api_key)
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+        FALLBACK_MODELS = [
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+        ]
 
         age_line = f"User age: {age_years:.0f} years." if age_years else "User age unknown."
         verdict = analysis.verdict.value if hasattr(analysis.verdict, "value") else str(analysis.verdict)
@@ -45,14 +52,25 @@ def _generate_weekly_coach_narrative(analysis, entries: list, age_years=None) ->
             "End with one concrete action for next week. Return plain text only."
         )
 
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction="You are RestIQ, a warm and encouraging sleep coach.",
-                temperature=0.4,
-            ),
-        )
+        last_error = None
+        for model_name in FALLBACK_MODELS:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction="You are RestIQ, a warm and encouraging sleep coach.",
+                        temperature=0.4,
+                    ),
+                )
+                break
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    last_error = e
+                    continue
+                raise
+        else:
+            raise last_error
         return (response.text or "").strip()
     except Exception as e:
         logger.warning("[REPORTING] Coach narrative failed: %s", e)
@@ -152,13 +170,51 @@ def generate_report(user_id: str) -> WeeklyReportSchema:
     if total_entries in [7, 14, 30, 60, 90]:
         milestone_message = f"Congratulations! You have logged {total_entries} sleep entries."
 
-    # Next week goal
+    # Next week goal with smart personalization
     if days_logged < 3:
         next_week_goal = "Log a few more nights this week to unlock better insights."
-    elif analysis.average_duration < 7:
-        next_week_goal = "Focus on getting at least 7 hours of sleep per night."
     else:
-        next_week_goal = analysis.recommendations[0] if analysis.recommendations else "Maintain consistency in your sleep schedule."
+        # 1. Check duration first (most important)
+        if analysis.average_duration < 7:
+            next_week_goal = (
+                f"⏰ You're averaging {analysis.average_duration:.1f} hours of sleep. "
+                f"Try going to bed **20–30 minutes earlier** to reach at least 7 hours. "
+                f"Consistent sleep duration is the strongest predictor of recovery."
+            )
+        else:
+            # 2. Duration is fine → check bedtime
+            bedtimes = []
+            for e in entries:
+                if e.bedtime:
+                    try:
+                        bedtimes.append(datetime.strptime(e.bedtime, "%H:%M"))
+                    except:
+                        pass
+            
+            if bedtimes:
+                avg_bedtime = sum([dt.hour * 60 + dt.minute for dt in bedtimes]) / len(bedtimes)
+                avg_hour = avg_bedtime // 60
+                avg_min = avg_bedtime % 60
+                
+                if 22 <= avg_hour <= 23:
+                    # Already in ideal window → praise + next focus
+                    if analysis.average_wake_ups > 1:
+                        next_week_goal = "✅ Great bedtime! This week, focus on reducing wake-ups with a calm wind-down routine."
+                    else:
+                        next_week_goal = "🌟 Excellent sleep habits! Keep your consistent schedule going."
+                else:
+                    # Suggest shifting to ideal window
+                    next_week_goal = (
+                        f"💡 Try shifting your bedtime to between **10:00 PM and 11:00 PM** "
+                        f"(you're currently averaging {int(avg_hour)}:{int(avg_min):02d} PM). "
+                        "This aligns with your natural circadian rhythm for deeper sleep."
+                    )
+            else:
+                # No bedtime data → generic
+                next_week_goal = (
+                    "💡 Aim to fall asleep between **10:00 PM and 11:00 PM** for optimal circadian alignment. "
+                    "This window maximizes melatonin and deep sleep quality."
+                )
 
     week_start = datetime.datetime.strptime(rows_sorted[0]["date"], "%Y-%m-%d").date()
     week_end = datetime.datetime.strptime(rows_sorted[-1]["date"], "%Y-%m-%d").date()

@@ -250,3 +250,75 @@ def store_sleep_assessment(user_id: str, assessment: dict) -> None:
     conn.commit()
     conn.close()
 
+def link_telegram_username(user_id: str, telegram_username: str) -> bool:
+    """
+    Link a user by their Telegram username.
+    """
+    if not user_id or not telegram_username:
+        raise ValueError("user_id and telegram_username are required.")
+
+    if not telegram_username.startswith("@"):
+        telegram_username = f"@{telegram_username}"
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE users
+            SET telegram_username = ?
+            WHERE user_id = ?
+            """,
+            (telegram_username, user_id)
+        )
+        
+        if cursor.rowcount == 0:
+            # User doesn't exist yet - create it
+            cursor.execute(
+                """
+                INSERT INTO users (
+                    user_id, username, target_wake_time, target_bedtime, target_sleep_duration,
+                    caffeine_sensitivity, check_in_streak, total_entries, plan_status, 
+                    telegram_username, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id, f"User_{user_id}", "07:00", "23:00", 8.0,
+                    "MEDIUM", 0, 0, "INSUFFICIENT_DATA", telegram_username,
+                    datetime.datetime.now().isoformat()
+                )
+            )
+        
+        conn.commit()
+        logger.info(f"Linked Telegram username {telegram_username} to user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to link Telegram username: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_telegram_username(user_id: str) -> str | None:
+    """Return the linked Telegram username for the user, or None."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT telegram_username FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0]:
+        return str(row[0])
+    return None
+
+def get_user_id_by_telegram_username(telegram_username: str) -> str | None:
+    if not telegram_username.startswith("@"):
+        telegram_username = f"@{telegram_username}"
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT user_id FROM users WHERE LOWER(telegram_username) = LOWER(?)",
+        (telegram_username,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None

@@ -63,107 +63,103 @@ def _call_register(user_id: str, username: str, wake_time: str):
     return profile_tool.register_user(user_id, username, wake_time)
 
 
+def _seed_demo_sleep_data(user_id: str) -> None:
+    """Insert 5 realistic sleep entries if fewer than 3 exist (demo only)."""
+    import sqlite3
+    from db.sqlite import DB_FILE
+    from tools.storage import store_sleep_data
+    from tools.scoring import compute_sleep_score
+    from schemas import SleepEntrySchema, SleepQuality, MoodOnWake
+
+    conn = sqlite3.connect(DB_FILE)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM sleep_entries WHERE user_id = ?", (user_id,)
+    ).fetchone()[0]
+    conn.close()
+    if count >= 3:
+        return
+
+    today = datetime.date.today()
+    seed_rows = [
+        (5, "22:45", "06:30", 7.75, 0, SleepQuality.GOOD, MoodOnWake.GOOD, False, True, False, 4, 4, "Solid night after morning run."),
+        (4, "23:45", "07:00", 7.25, 2, SleepQuality.FAIR, MoodOnWake.TIRED, True, False, True, 3, 3, "Late coffee and scrolling."),
+        (3, "22:30", "06:45", 8.25, 0, SleepQuality.EXCELLENT, MoodOnWake.GREAT, False, True, False, 5, 5, "Best sleep this week."),
+        (2, "23:15", "07:15", 8.0, 1, SleepQuality.GOOD, MoodOnWake.GOOD, False, False, True, 4, 4, "Watched TV before bed."),
+        (1, "22:00", "06:30", 8.5, 0, SleepQuality.EXCELLENT, MoodOnWake.GREAT, False, True, False, 5, 5, "Early to bed, felt refreshed."),
+    ]
+    for days_ago, *fields in seed_rows:
+        entry = SleepEntrySchema(
+            user_id=user_id,
+            date=today - datetime.timedelta(days=days_ago),
+            bedtime=fields[0], wake_time=fields[1], sleep_duration=fields[2],
+            wake_up_count=fields[3], sleep_quality=fields[4], mood_on_wake=fields[5],
+            caffeine_after_2pm=fields[6], exercise_today=fields[7],
+            screen_time_before_bed=fields[8], focus_level=fields[9],
+            energy_level=fields[10], notes=fields[11],
+        )
+        entry.score = compute_sleep_score(entry)
+        store_sleep_data(entry)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Telegram Helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_to_telegram(chat_id: str, message: str, photo_path: str = None):
+    """Send message or photo to Telegram from Streamlit."""
+    if not TELEGRAM_BOT_TOKEN:
+        st.error("TELEGRAM_BOT_TOKEN is not set in .env")
+        return False
+    try:
+        import requests
+        base_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
+        
+        if photo_path and os.path.exists(photo_path):
+            with open(photo_path, "rb") as f:
+                response = requests.post(
+                    base_url + "sendPhoto",
+                    data={"chat_id": chat_id, "caption": message},
+                    files={"photo": f},
+                    timeout=15
+                )
+        else:
+            response = requests.post(
+                base_url + "sendMessage",
+                json={"chat_id": chat_id, "text": message},
+                timeout=10
+            )
+        
+        return response.ok
+    except Exception as e:
+        st.error(f"Failed to send to Telegram: {e}")
+        return False
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar — user identity
 # ─────────────────────────────────────────────────────────────────────────────
 
-query_user_id = st.query_params.get("user_id")
-resolved_id = query_user_id or st.session_state.get("user_id")
+DEMO_USER_ID = "demo-user"
 
-if not resolved_id:
-    import uuid
-    resolved_id = f"guest-{uuid.uuid4().hex[:8]}"
-    try:
-        _call_register(resolved_id, "Guest", "07:00")
-    except Exception as e:
-        st.error(f"Could not start session: {e}")
-        st.stop()
-    st.session_state["just_registered"] = True
+try:
+    profile_tool.get_user_profile(DEMO_USER_ID)
+except ValueError:
+    _call_register(DEMO_USER_ID, "Demo User", "07:00")
 
-st.session_state["user_id"] = resolved_id
-st.query_params["user_id"] = resolved_id
-# Seed the widget's own state BEFORE the widget is created, so `value=` isn't ignored
-st.session_state["sidebar_user_id_input"] = resolved_id
+user_id = DEMO_USER_ID
+st.session_state["user_id"] = user_id
+st.query_params["user_id"] = user_id
+st.session_state["sidebar_user_id_input"] = user_id
+
+_seed_demo_sleep_data(user_id)
 
 with st.sidebar:
     st.markdown("### 🌙 RestIQ")
     st.caption("Sleep concierge dashboard")
 
-    user_id = st.text_input(
+    st.text_input(
         "User ID",
-        help="Auto-filled after registration, or paste your existing ID.",
+        value=user_id,
+        disabled=True,
         key="sidebar_user_id_input",
     )
-    if user_id and user_id != resolved_id:
-        st.session_state["user_id"] = user_id
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Registration gate — shown when no user_id is present
-# ─────────────────────────────────────────────────────────────────────────────
-
-if not user_id:
-    import uuid
-    auto_id = f"guest-{uuid.uuid4().hex[:8]}"
-    try:
-        _call_register(auto_id, "Guest", "07:00")
-        st.session_state["user_id"] = auto_id
-        st.session_state["just_registered"] = True
-        st.query_params["user_id"] = auto_id
-        st.rerun()
-    except Exception as e:
-        st.error(f"Could not start session: {e}")
-        st.stop()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Post-registration: show "Connect Telegram" banner (once)
-# ─────────────────────────────────────────────────────────────────────────────
-
-if st.session_state.pop("just_registered", False):
-    telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-    st.success(f"✅ Account created! Your user ID is `{user_id}`.")
-    st.info(
-        "**Connect Telegram to get daily check-in reminders.**\n\n"
-        f"Click the button below, then tap **Start** in Telegram."
-    )
-    st.caption("New to Telegram? Download the app or open web.telegram.org and log in first, then click below.")
-    st.link_button("📲 Connect Telegram", telegram_link, type="primary")
-    st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main dashboard header
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.title("🌙 RestIQ Dashboard")
-st.caption(f"Showing data for user `{user_id}`")
-
-# Persistent "Connect Telegram" button in the sidebar for already-registered users
-with st.sidebar:
-    st.divider()
-    telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-    st.link_button("📲 Connect Telegram", telegram_link)
-    st.caption("Links your account so you receive daily check-ins and weekly reports in Telegram.")
-
-    # ── Age input (persistent, one-time) ─────────────────────────────────────
-    st.divider()
-    st.markdown("#### 🎂 Your Age")
-    _stored_age = profile_tool.get_user_age(user_id)
-    _age_input = st.number_input(
-        "Age (years)",
-        min_value=0.0,
-        max_value=130.0,
-        value=float(_stored_age) if _stored_age is not None else 25.0,
-        step=1.0,
-        help="Used to compare your sleep against CDC/AASM guidelines for your age group.",
-        key="sidebar_age_input",
-    )
-    if st.button("Save age", key="save_age_btn", use_container_width=True):
-        try:
-            profile_tool.update_user_age(user_id, _age_input)
-            st.success(f"✅ Age saved ({_age_input:.0f} yrs)")
-        except ValueError as _e:
-            st.error(f"⚠️ {_e}")
-    if _stored_age is not None:
-        st.caption(f"Saved: {_stored_age:.0f} years")
 
     # ── Follow-up Scheduler ──────────────────────────────────────────────────
     st.divider()
@@ -210,6 +206,13 @@ with st.sidebar:
                 st.rerun()
     except Exception:
         pass  # Silently skip if history unavailable
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main dashboard header
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.title("🌙 RestIQ Dashboard")
+st.caption(f"Showing data for user `{user_id}`")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -505,12 +508,14 @@ with tab_checkin:
 
                         st.session_state.checkin_analyzed = True
                         st.session_state.checkin_result = result["reply_message"]
-                        if session.age_years and session.age_years > 0:
+                        # === UPDATE AGE IN PROFILE ===
+                        if hasattr(session, 'age_years') and session.age_years and session.age_years > 0:
                             try:
                                 profile_tool.update_user_age(user_id, session.age_years)
-                                st.success(f"✅ Age saved: {session.age_years:.0f} years")
-                            except:
-                                pass
+                                st.success(f"✅ Age updated to {session.age_years:.0f} years")
+                            except Exception as age_err:
+                                st.warning(f"Could not update age: {age_err}")
+                        
                         st.session_state.checkin_analysis = {
                             "score": score,
                             "score_label": _score_label(score),
@@ -825,9 +830,257 @@ with tab_report:
                             height=320,
                             xaxis_title="Day",
                             yaxis_title="Sleep Score",
+                            paper_bgcolor="#1e293b",
+                            plot_bgcolor="#1e293b",
+                            font_color="#e2e8f0",
                         )
 
                         st.plotly_chart(fig, use_container_width=True)
+
+                        _age = profile_tool.get_user_age(user_id)
+
+                        def _grid_color(score):
+                            s = score if score is not None else 0
+                            if s <= 50:
+                                return "#ef4444"
+                            if s <= 70:
+                                return "#eab308"
+                            if s <= 85:
+                                return "#86efac"
+                            return "#4ade80"
+
+                        def _fmt_clock(time_str):
+                            h, m = map(int, time_str.split(":"))
+                            if m == 0:
+                                if h == 0:
+                                    return "12am"
+                                if h < 12:
+                                    return f"{h}am"
+                                if h == 12:
+                                    return "12pm"
+                                return f"{h - 12}pm"
+                            if h == 0:
+                                return f"12:{m:02d}am"
+                            if h < 12:
+                                return f"{h}:{m:02d}am"
+                            if h == 12:
+                                return f"12:{m:02d}pm"
+                            return f"{h - 12}:{m:02d}pm"
+
+                        def _fmt_clock_long(time_str):
+                            h, m = map(int, time_str.split(":"))
+                            if h == 0:
+                                return f"12:{m:02d} AM"
+                            if h < 12:
+                                return f"{h}:{m:02d} AM"
+                            if h == 12:
+                                return f"12:{m:02d} PM"
+                            return f"{h - 12}:{m:02d} PM"
+
+                        def _fmt_short_date(entry_date):
+                            if isinstance(entry_date, datetime.date):
+                                d = entry_date
+                            else:
+                                d = datetime.datetime.strptime(str(entry_date), "%Y-%m-%d").date()
+                            return f"{d.strftime('%b')} {d.day}"
+
+                        def _bedtime_mark(bedtime):
+                            h, _m = map(int, bedtime.split(":"))
+                            if h < 6:
+                                return "⚠️"
+                            if h <= 23:
+                                return "✅"
+                            return "⚠️"
+
+                        _coach_narrative = getattr(report, "coach_narrative", None)
+                        _coach_section = ""
+                        if _coach_narrative:
+                            _coach_section = f"""
+  <div class="section coach-box">
+    <h3>Coach Summary</h3>
+    <p>{_coach_narrative}</p>
+  </div>"""
+
+                        _grid_cells = ""
+                        for _e in history_sorted:
+                            _sc = _e.score if _e.score is not None else 0
+                            _bt_label = _fmt_clock(_e.bedtime)
+                            _date_label = _fmt_short_date(_e.date)
+                            _grid_cells += (
+                                f'<div style="display:inline-flex;flex-direction:column;align-items:center;margin:4px;">'
+                                f'<span style="font-size:10px;color:#94a3b8;margin-bottom:4px;">{_bt_label}</span>'
+                                f'<span title="Score: {_sc}/100" style="display:inline-block;width:28px;height:28px;'
+                                f'background:{_grid_color(_sc)};border-radius:4px;cursor:default;"></span>'
+                                f'<span style="font-size:10px;color:#94a3b8;margin-top:4px;">{_date_label}</span>'
+                                f'</div>'
+                            )
+
+                        _goal_rows = ""
+                        for _e in history_sorted:
+                            _mark = _bedtime_mark(_e.bedtime)
+                            _goal_rows += (
+                                f'<li>{_fmt_short_date(_e.date)} — {_fmt_clock_long(_e.bedtime)} {_mark}</li>'
+                            )
+
+                        _patterns_html = "".join(
+                            f"<li>{p}</li>" for p in (analysis.patterns_detected or [])
+                        )
+                        _recs_html = "".join(
+                            f"<li>{r}</li>" for r in (analysis.recommendations or [])
+                        )
+
+                        _table_rows = ""
+                        for _e in history_sorted:
+                            _sc = _e.score if _e.score is not None else 0
+                            _bar_color = _grid_color(_sc)
+                            _table_rows += (
+                                f"<tr>"
+                                f"<td>{_e.date}</td>"
+                                f"<td>{_fmt_clock_long(_e.bedtime)}</td>"
+                                f"<td>{_fmt_clock_long(_e.wake_time)}</td>"
+                                f"<td>{_e.sleep_duration}h</td>"
+                                f'<td class="score-col">'
+                                f'<span class="score-num">{_sc}</span>'
+                                f'<div class="bar-bg"><div class="bar-fill" style="width:{_sc}%;background:{_bar_color};"></div></div>'
+                                f"</td>"
+                                f"</tr>"
+                            )
+
+                        _age_section = ""
+                        if _age is not None:
+                            if _age >= 65:
+                                _min_h, _max_h, _band = 7, 8, "65+"
+                            elif _age >= 26:
+                                _min_h, _max_h, _band = 7, 9, "26–64"
+                            else:
+                                _min_h, _max_h, _band = 7, 9, "18–25"
+                            _within = _min_h <= analysis.average_duration <= _max_h
+                            _range_status = (
+                                "Within recommended range"
+                                if _within
+                                else "Outside recommended range"
+                            )
+                            _age_section = f"""
+  <div class="section">
+    <h3>Age &amp; Guideline</h3>
+    <p>Age: <strong>{_age:.0f}</strong> ({_band})</p>
+    <p>CDC recommended: <strong>{_min_h}–{_max_h}h</strong>/night</p>
+    <p>Your average: <strong>{analysis.average_duration}h</strong> — {_range_status}</p>
+  </div>"""
+
+                        _bedtime_rec = next(
+                            (
+                                r for r in analysis.recommendations
+                                if "ideal" in r.lower() or "bedtime" in r.lower()
+                            ),
+                            None,
+                        )
+                        _bedtime_section = ""
+                        if _bedtime_rec:
+                            _bed_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", _bedtime_rec)
+                            _bedtime_section = f"""
+  <div class="section highlight">
+    <h3>Recommended Bedtime</h3>
+    <p>{_bed_html}</p>
+  </div>"""
+
+                        _chart_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+                        _report_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RestIQ Weekly Report — {user_id}</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background: #0f172a; color: #e2e8f0; }}
+    h2, h3 {{ color: #4ade80; }}
+    .section {{ margin: 1.5rem 0; padding: 1rem; background: #1e293b; border-radius: 8px; }}
+    .section.highlight {{ background: #14532d; border-left: 4px solid #4ade80; }}
+    .section.coach-box {{ background: linear-gradient(135deg, #1a2e1a 0%, #0d1f0d 100%); border-left: 4px solid #4ade80; }}
+    .metrics-row {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 1.5rem 0; }}
+    .metric-card {{ background: #1e293b; border-radius: 8px; padding: 16px; text-align: center; }}
+    .metric-label {{ font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }}
+    .metric-value {{ font-size: 28px; font-weight: 700; color: #4ade80; }}
+    .grid-row {{ display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; }}
+    .legend {{ display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #94a3b8; }}
+    .legend span {{ display: inline-flex; align-items: center; gap: 6px; }}
+    .legend i {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; }}
+    .goal-list {{ margin: 8px 0 0 0; padding-left: 1.25rem; line-height: 1.8; }}
+    .insights-list {{ margin: 8px 0 0 0; padding-left: 1.25rem; line-height: 1.7; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    th, td {{ padding: 10px 8px; text-align: left; border-bottom: 1px solid #334155; }}
+    th {{ color: #4ade80; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }}
+    .score-col {{ min-width: 120px; }}
+    .score-num {{ display: inline-block; width: 28px; font-weight: 600; }}
+    .bar-bg {{ display: inline-block; width: 80px; height: 8px; background: #334155; border-radius: 4px; vertical-align: middle; }}
+    .bar-fill {{ height: 100%; border-radius: 4px; }}
+  </style>
+</head>
+<body>{_coach_section}
+  <h2>RestIQ Weekly Report</h2>
+  <p>Verdict: <strong>{verdict_val}</strong></p>
+  <div class="metrics-row">
+    <div class="metric-card">
+      <div class="metric-label">Avg Score</div>
+      <div class="metric-value">{analysis.average_score}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Avg Duration</div>
+      <div class="metric-value">{analysis.average_duration}h</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Avg Wake-ups</div>
+      <div class="metric-value">{analysis.average_wake_ups}</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Streak</div>
+      <div class="metric-value">{analysis.streak_days}</div>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Sleep Activity</h3>
+    <div class="grid-row">{_grid_cells}</div>
+    <div class="legend">
+      <span><i style="background:#ef4444;"></i>Poor</span>
+      <span><i style="background:#eab308;"></i>Fair</span>
+      <span><i style="background:#86efac;"></i>Good</span>
+      <span><i style="background:#4ade80;"></i>Excellent</span>
+    </div>
+  </div>
+  <div class="section highlight">
+    <h3>Bedtime Goal</h3>
+    <p><strong>🎯 Goal: 10–11 PM</strong></p>
+    <ul class="goal-list">{_goal_rows}</ul>
+  </div>{_age_section}{_bedtime_section}
+  <div class="section">
+    <h3>Sleep Trends</h3>
+    {_chart_html}
+  </div>
+  <div class="section">
+    <h3>AI Insights</h3>
+    <h4 style="color:#86efac;font-size:14px;margin:12px 0 6px;">Patterns Detected</h4>
+    <ul class="insights-list">{_patterns_html}</ul>
+    <h4 style="color:#86efac;font-size:14px;margin:16px 0 6px;">Recommendations</h4>
+    <ol class="insights-list">{_recs_html}</ol>
+  </div>
+  <div class="section">
+    <h3>Weekly Sleep Log</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Bedtime</th>
+          <th>Wake Time</th>
+          <th>Duration</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>{_table_rows}</tbody>
+    </table>
+  </div>
+</body>
+</html>"""
+                        with open(f"/tmp/restiq_report_{user_id}.html", "w", encoding="utf-8") as _hf:
+                            _hf.write(_report_html)
 
                         if history_count < 3:
                             st.caption("Trend accuracy improves after at least 3 daily sleep entries.")
@@ -979,73 +1232,31 @@ with tab_report:
                 )
                 st.caption("Technical details are available in the terminal logs.")
 
-    # ── Send to Telegram / Download ──────────────────────────────────────────
+    # ── Share & Download ──────────────────────────────────────────
     st.write("")
     st.markdown("### 📤 Share Your Report")
     with st.container(border=True):
-        _chat_id = profile_tool.get_telegram_chat_id(user_id)
-        _chart_path = f"/tmp/restiq_report_{user_id}.png"
+        _chart_path = f"/tmp/restiq_report_{user_id}.html"
         _chart_exists = os.path.exists(_chart_path)
 
-        if _chat_id:
-            st.caption(f"📬 Linked to Telegram chat `{_chat_id}`")
-            if st.button("📲 Send to Telegram", type="primary", use_container_width=True, key="send_telegram_report"):
-                if not _chart_exists:
-                    st.warning(
-                        "No report chart found. Please click **Generate weekly report** first."
-                    )
-                elif not TELEGRAM_BOT_TOKEN:
-                    st.error("TELEGRAM_BOT_TOKEN is not configured. Check your .env file.")
-                else:
-                    with st.spinner("Sending to Telegram..."):
-                        try:
-                            import requests as _req
-                            _tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-                            # Send chart image
-                            with open(_chart_path, "rb") as _f:
-                                _resp = _req.post(
-                                    f"{_tg_url}/sendPhoto",
-                                    data={"chat_id": _chat_id, "caption": "📊 Your weekly RestIQ sleep report chart."},
-                                    files={"photo": _f},
-                                    timeout=15,
-                                )
-                            if not _resp.ok:
-                                raise RuntimeError(f"Telegram API error: {_resp.text}")
-                            st.success("✅ Chart sent to Telegram!")
-                        except ValueError as _e:
-                            st.warning(f"⚠️ {_e}")
-                            st.info(
-                                "Log at least 3 sleep entries via **/checkin** in Telegram "
-                                "or the Check-in tab above, then try again."
-                            )
-                        except Exception as _e:
-                            st.error(f"❌ Could not send to Telegram: {_e}")
-                            st.caption("Check that your bot token and chat ID are correct.")
-        else:
-            telegram_link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-            st.info(
-                "**Telegram not connected.**\n\n"
-                "Link your account to send reports directly to your Telegram chat."
-            )
-            st.link_button("📲 Connect Telegram", telegram_link, type="primary")
-            st.caption(
-                "After clicking, open Telegram and tap **Start**. "
-                "New to Telegram? Log in at web.telegram.org first."
-            )
-
-        st.write("")
         if _chart_exists:
             with open(_chart_path, "rb") as _dl_f:
                 st.download_button(
-                    label="⬇️ Download Chart as PNG",
-                    data=_dl_f,
-                    file_name=f"restiq_weekly_report_{user_id}.png",
-                    mime="image/png",
+                    label="⬇️ Download Chart as HTML",
+                    data=_dl_f.read(),
+                    file_name=f"restiq_weekly_report_{user_id}.html",
+                    mime="text/html",
                     use_container_width=True,
-                    key="download_report_png",
                 )
         else:
-            st.caption("Generate the weekly report above to enable download.")
+            st.download_button(
+                label="Generate report first",
+                data=b"",
+                file_name=f"restiq_weekly_report_{user_id}.html",
+                mime="text/html",
+                use_container_width=True,
+                disabled=True,
+            )
 
 # ── Tab 3: Plan History ──────────────────────────────────────────────────────
 

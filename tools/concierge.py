@@ -86,6 +86,7 @@ Strict Rules:
 - After getting age, immediately ask about bedtime/wake time.
 - If the user message is empty, nonsensical, or off-topic, respond with a gentle nudge back to sleep discussion.
 - Keep responses short and natural.
+- If the user says "I sleep from 2 am to 9 am" or similar, ALWAYS extract bedtime and wake_time.
 """
 
 class _ConciergeLLMResponse(BaseModel):
@@ -231,10 +232,9 @@ def _merge_slots(session: CheckinSessionState, turn: ConciergeTurnResponse) -> N
     updates = turn.updated_slots.model_dump(exclude_none=True)
     for key, value in updates.items():
         setattr(session.slots, key, value)
-        
-        # IMPORTANT: Mark as KNOWN when we receive a value
         if value is not None:
-            session.slot_confidence[key] = SlotConfidence.KNOWN
+            session.slot_confidence[key] = SlotConfidence.KNOWN   # Force known
+    # ... rest of your code ...
     for key, conf in turn.slot_confidence.items():
         if key not in REQUIRED_CHECKIN_SLOTS and key not in ("focus_level", "energy_level"):
             continue
@@ -307,11 +307,21 @@ def _handle_age_turn(session: CheckinSessionState, user_message: str) -> Optiona
 # ---------------------------------------------------------------------------
 
 def _build_follow_up(session: CheckinSessionState) -> Optional[str]:
-    """Build the next contextual question for missing sleep slots."""
+    """Smart follow-up questions to avoid loops."""
+    
+    # Age check
+    if session.age_years is None or session.age_years <= 0:
+        context = session.session_context or ""
+        if "age_asked" not in context:
+            session.session_context = "age_asked" if not context else f"{context};age_asked"
+            return "To give you better personalized advice, could you tell me your age? (Just the number is fine 😊)"
+        return None
+
     missing = session.missing_slots()
     if not missing:
-        return "All set! Click **Analyze my sleep** below when ready."
+        return "All set! Click **Analyze my sleep** below when you're ready."
 
+    # Bedtime / Wake time — check confidence
     asked_bedtime = session.slot_confidence.get("bedtime") == SlotConfidence.KNOWN
     asked_wake = session.slot_confidence.get("wake_time") == SlotConfidence.KNOWN
 
@@ -324,13 +334,6 @@ def _build_follow_up(session: CheckinSessionState) -> Optional[str]:
 
     slots = session.slots
     conf = session.slot_confidence
-
-    if "bedtime" in missing and "wake_time" in missing:
-        return "What time did you go to bed and wake up?"
-    if "bedtime" in missing:
-        return "What time did you get to bed?"
-    if "wake_time" in missing:
-        return "What time did you wake up?"
 
     if "wake_up_count" in missing:
         return "Any wake-ups during the night?"
@@ -396,7 +399,14 @@ def _call_concierge(session: CheckinSessionState, user_message: str) -> _Concier
         )
 
     client = genai.Client(api_key=api_key)
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+    FALLBACK_MODELS = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
+    ]
 
     age_info = (
         f"{session.age_years:.0f}"
@@ -417,15 +427,26 @@ def _call_concierge(session: CheckinSessionState, user_message: str) -> _Concier
 
     system = _SYSTEM_INSTRUCTION.replace("{age_info}", age_info)
 
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            response_mime_type="application/json",
-            temperature=_CONCIERGE_TEMPERATURE,
-        ),
-    )
+    last_error = None
+    for model_name in FALLBACK_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    response_mime_type="application/json",
+                    temperature=_CONCIERGE_TEMPERATURE,
+                ),
+            )
+            break
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                last_error = e
+                continue
+            raise
+    else:
+        raise last_error
 
     try:
         parsed = _parse_llm_json(response.text)
@@ -449,12 +470,24 @@ def process_turn(session: CheckinSessionState, user_message: str) -> tuple[Check
 
     session.messages.append(ChatMessage(role="user", content=user_message))
 
-    # --- Age collection phase (Fix A + B) ---
     age_reply = _handle_age_turn(session, user_message)
     if age_reply is not None:
-        # Still resolving age — don't run full LLM call
         session.messages.append(ChatMessage(role="assistant", content=age_reply))
         return session, age_reply
+
+    # NEW: if age just got resolved and slots are still empty, replay ALL prior
+    # user messages through the LLM so nothing is lost
+    if session.age_years and not session.slots.bedtime:
+        prior_user_msgs = [m.content for m in session.messages if m.role == "user"]
+        if len(prior_user_msgs) > 1:
+            for prior in prior_user_msgs[:-1]:   # all except current
+                llm = _call_concierge(session, prior)
+                turn = ConciergeTurnResponse(
+                    acknowledgment="", updated_slots=llm.updated_slots,
+                    slot_confidence=_normalize_confidence(llm.slot_confidence),
+                    follow_up=None, is_complete=False,
+                )
+                _merge_slots(session, turn)
 
     # --- Normal slot-extraction phase ---
     llm = _call_concierge(session, user_message)

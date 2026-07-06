@@ -36,12 +36,28 @@ from tools import profile as profile_tool
 def _call_link_telegram(user_id: str, telegram_chat_id: str):
     return profile_tool.link_telegram(user_id, telegram_chat_id)
 
+# === NEW HELPER: Backfill chat_id from username ===
+async def _backfill_chat_id(update: Update):
+    """Backfill chat_id if user linked via username in Streamlit."""
+    username = update.effective_user.username
+    if username:
+        chat_id = str(update.effective_chat.id)
+        matched_user_id = await asyncio.to_thread(
+            profile_tool.get_user_id_by_telegram_username, username
+        )
+        if matched_user_id:
+            await asyncio.to_thread(
+                profile_tool.link_telegram, matched_user_id, chat_id
+            )
+            logger.info(f"Backfilled chat_id for username @{username}")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Handlers
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _backfill_chat_id(update)
     """
     /start handler.
 
@@ -155,16 +171,30 @@ def _wants_report(text: str) -> bool:
 
 
 async def handle_checkin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _backfill_chat_id(update)
     user_id = str(update.effective_user.id)
     logger.info("[BOT] Starting check-in session for user_id: %s", user_id)
     await _start_checkin_session(update, context, user_id)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _backfill_chat_id(update)
     user_id = str(update.effective_user.id)
     username = update.effective_user.username or update.effective_user.first_name
     message_text = update.message.text
     logger.info("[BOT] Message received from %s", username)
+
+    # === NEW: Backfill chat_id from username ===
+    incoming_username = update.effective_user.username
+    chat_id = update.effective_chat.id
+    if incoming_username:
+        matched_user_id = profile_tool.get_user_id_by_telegram_username(incoming_username)
+        if matched_user_id:
+            await asyncio.to_thread(
+                profile_tool.link_telegram, matched_user_id, str(chat_id)
+            )
+            logger.info(f"Backfilled chat_id for username @{incoming_username}")
+    # ===========================================
 
     if _wants_report(message_text) and not context.user_data.get("checkin_session"):
         await handle_report_command(update, context)
@@ -198,6 +228,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _backfill_chat_id(update)
     telegram_chat_id = str(update.effective_user.id)
 
     try:
