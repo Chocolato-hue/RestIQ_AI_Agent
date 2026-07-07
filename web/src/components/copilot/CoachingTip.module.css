@@ -1,0 +1,89 @@
+.card {
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin: var(--space-sm) 0;
+  box-shadow: var(--shadow-sm);
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.icon {
+  font-size: var(--text-md);
+}
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.tipText {
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+/* Category styling variations */
+.caffeine {
+  background: rgba(245, 158, 11, 0.05);
+  border-left: 3px solid var(--color-warning);
+}
+.caffeine .label {
+  color: var(--color-warning);
+}
+.caffeine .tipText {
+  color: var(--color-text-secondary);
+}
+
+.screen {
+  background: rgba(239, 68, 68, 0.05);
+  border-left: 3px solid var(--color-error);
+}
+.screen .label {
+  color: var(--color-error);
+}
+.screen .tipText {
+  color: var(--color-text-secondary);
+}
+
+.exercise {
+  background: rgba(16, 185, 129, 0.05);
+  border-left: 3px solid var(--color-success);
+}
+.exercise .label {
+  color: var(--color-success);
+}
+.exercise .tipText {
+  color: var(--color-text-secondary);
+}
+
+.duration {
+  background: rgba(99, 102, 241, 0.05);
+  border-left: 3px solid var(--color-primary);
+}
+.duration .label {
+  color: var(--color-primary-hover);
+}
+.duration .tipText {
+  color: var(--color-text-secondary);
+}
+
+.general {
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 3px solid var(--color-text-muted);
+}
+.general .label {
+  color: var(--color-text-muted);
+}
+.general .tipText {
+  color: var(--color-text-secondary);
+}

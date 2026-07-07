@@ -1,0 +1,68 @@
+.card {
+  position: relative;
+  background: var(--color-surface);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  pointer-events: none;
+}
+
+/* Hover variant */
+.hoverable:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Glow effect on hover */
+.glowIndigo:hover {
+  box-shadow:
+    var(--shadow-md),
+    0 0 30px rgba(99, 102, 241, 0.12),
+    inset 0 1px 0 rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.glowEmerald:hover {
+  box-shadow:
+    var(--shadow-md),
+    0 0 30px rgba(16, 185, 129, 0.12),
+    inset 0 1px 0 rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.glowAmber:hover {
+  box-shadow:
+    var(--shadow-md),
+    0 0 30px rgba(245, 158, 11, 0.12),
+    inset 0 1px 0 rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.glowRed:hover {
+  box-shadow:
+    var(--shadow-md),
+    0 0 30px rgba(239, 68, 68, 0.12),
+    inset 0 1px 0 rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+}

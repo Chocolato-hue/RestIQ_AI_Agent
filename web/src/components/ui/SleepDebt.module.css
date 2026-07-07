@@ -1,0 +1,160 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  height: 100%;
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: -8px;
+}
+
+.display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  flex: 1;
+  justify-content: space-between;
+}
+
+.gaugeContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-dim);
+  font-weight: 600;
+}
+
+.track {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.midline {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.marker {
+  position: absolute;
+  top: -5px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  transform: translateX(-50%);
+  border: 2px solid var(--color-bg);
+  box-shadow: var(--shadow-sm);
+  transition: left var(--transition-slow);
+}
+
+.calc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin: var(--space-xs) 0;
+}
+
+.mainValue {
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.calcLabel {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  margin-top: 4px;
+}
+
+.valueRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+}
+
+.label {
+  color: var(--color-text-secondary);
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+}
+
+.message {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+/* Markers and Badges Styles */
+.neutral {
+  background: var(--color-success) !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  color: var(--color-success);
+}
+.neutral.badge {
+  background: var(--color-success-muted);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.warning {
+  background: var(--color-warning) !important;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+  color: var(--color-warning);
+}
+.warning.badge {
+  background: var(--color-warning-muted);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.critical {
+  background: var(--color-error) !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+  color: var(--color-error);
+}
+.critical.badge {
+  background: var(--color-error-muted);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.oversleep {
+  background: var(--color-info) !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+  color: var(--color-info);
+}
+.oversleep.badge {
+  background: var(--color-info-muted);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}

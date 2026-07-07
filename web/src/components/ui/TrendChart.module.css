@@ -1,0 +1,32 @@
+.container {
+  width: 100%;
+  position: relative;
+  background: transparent;
+}
+
+.tooltip {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(var(--blur-md));
+}
+
+.tooltipLabel {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+}
+
+.tooltipValue {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.scoreText {
+  color: var(--color-primary);
+  font-weight: 700;
+}
