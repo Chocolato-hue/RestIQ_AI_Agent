@@ -228,26 +228,38 @@ Streamlit and the pipeline only need `GOOGLE_API_KEY`. The Telegram bot needs al
 
 # ▶ Running RestIQ
 
-Start Streamlit
+### Next.js Premium WebUI (Recommended)
 
+1. Start the Python Agent Server (FastAPI + CopilotKit AG-UI backend):
+   ```bash
+   uv run python agent_server.py
+   ```
+
+2. Start the Next.js Development Server:
+   ```bash
+   cd web
+   bun dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) to view the dashboard and chat sidebar.
+
+### Classic Interfaces (Optional)
+
+Start Streamlit:
 ```bash
 uv run streamlit run streamlit_app.py
 ```
 
-Start Telegram Bot
-
+Start Telegram Bot:
 ```bash
 uv run python bot.py
 ```
 
-Run Agent Development UI
-
+Run Agent Development UI:
 ```bash
 uv run adk web restiq_agent
 ```
 
-Run Full Pipeline
-
+Run Full Pipeline CLI:
 ```bash
 uv run python pipeline.py
 ```
